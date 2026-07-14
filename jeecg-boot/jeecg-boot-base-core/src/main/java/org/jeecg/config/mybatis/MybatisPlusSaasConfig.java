@@ -82,6 +82,11 @@ public class MybatisPlusSaasConfig {
             TENANT_TABLE.add("airag_model");
         }
 
+        // Multi-Agent configuration contains credentials and is isolated even when legacy system-table tenancy is off.
+        TENANT_TABLE.add("ai_agent");
+        TENANT_TABLE.add("ai_connector");
+        TENANT_TABLE.add("ai_feishu_bot");
+
         //2.示例测试
         //TENANT_TABLE.add("demo");
         //3.online租户隔离测试

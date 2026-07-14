@@ -11,3 +11,5 @@ COPY ./tables_nacos.sql /docker-entrypoint-initdb.d
 COPY ./jeecgboot-mysql-5.7.sql /docker-entrypoint-initdb.d
 
 COPY ./tables_xxl_job.sql /docker-entrypoint-initdb.d
+
+COPY ./multi-agent-config.sql /docker-entrypoint-initdb.d/zz_multi-agent-config.sql

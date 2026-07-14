@@ -42,6 +42,11 @@ services:
     container_name: jeecg-boot-system
     image: jeecg-boot-system
     hostname: jeecg-boot-system
+    environment:
+      AI_CONFIG_SECRET_KEY: ${AI_CONFIG_SECRET_KEY:-}
+      AI_CALLBACK_BASE_URL: ${AI_CALLBACK_BASE_URL:-http://localhost:8080/jeecg-boot}
+      AI_MOCK_AGENT_ENABLED: ${AI_MOCK_AGENT_ENABLED:-false}
+      AI_AGENT_ALLOWED_HOSTS: ${AI_AGENT_ALLOWED_HOSTS:-}
     ports:
       - 8080:8080
     networks:

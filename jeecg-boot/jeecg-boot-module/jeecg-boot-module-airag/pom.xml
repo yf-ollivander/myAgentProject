@@ -57,6 +57,12 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Official Feishu SDK provides the managed WebSocket channel used for bot events. -->
+        <dependency>
+            <groupId>com.larksuite.oapi</groupId>
+            <artifactId>oapi-sdk</artifactId>
+            <version>2.8.3</version>
+        </dependency>
         <!-- system单体 api-->
         <dependency>
             <groupId>org.jeecgframework.boot3</groupId>

@@ -67,6 +67,10 @@ services:
     restart: on-failure
     environment:
       - TZ=Asia/Shanghai
+      - AI_CONFIG_SECRET_KEY=${AI_CONFIG_SECRET_KEY:-}
+      - AI_CALLBACK_BASE_URL=${AI_CALLBACK_BASE_URL:-}
+      - AI_MOCK_AGENT_ENABLED=${AI_MOCK_AGENT_ENABLED:-false}
+      - AI_AGENT_ALLOWED_HOSTS=${AI_AGENT_ALLOWED_HOSTS:-}
     networks:
       - jeecg-boot
 

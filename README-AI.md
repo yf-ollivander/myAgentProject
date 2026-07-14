@@ -1,6 +1,27 @@
 AIGC应用平台介绍
 ===============
 
+## Multi-Agent configuration module
+
+Module 1 adds three management areas under the `Multi-Agent Management` menu:
+
+- Agents: `/api/ai/agents`
+- HTTP Connectors: `/api/ai/connectors`
+- Feishu bots: `/api/ai/feishu-bots`
+
+Before saving credentials, inject a stable AES-256 key. Generate it once with `openssl rand -base64 32`, store it in the deployment secret manager, and expose it as `AI_CONFIG_SECRET_KEY`. Losing or changing this key makes existing encrypted credentials unreadable.
+
+Optional settings:
+
+- `AI_CALLBACK_BASE_URL`: reserved public JEECG base URL for a future HTTP callback mode; SDK long connection mode does not use it.
+- `AI_FEISHU_API_BASE_URL`: Feishu API base URL; primarily overridden by automated tests.
+- `AI_MOCK_AGENT_ENABLED=true`: exposes the deterministic development endpoint `/api/ai/mock-agent/execute`.
+- `AI_AGENT_ALLOWED_HOSTS`: comma-separated exact hosts or `*.example.com` patterns allowed for Connector calls. An empty value permits all HTTP/HTTPS hosts and should not be used in production.
+
+Existing databases must run `V3.9.3_1__multi_agent_config.sql` manually when Flyway is disabled. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
+
+Connector and Feishu tests call external services but never create formal Agent runs. Enabled Feishu application bots now receive `im.message.receive_v1` through the official SDK long connection. The receiver intentionally records metadata only; Agent lookup, deduplication, run creation, command parsing, replies, Redis scheduling, pipelines, and run inspection remain outside this module.
+
 一个全栈式 AI 开发平台，旨在帮助开发者快速构建和部署个性化的 AI 应用。
 
 JeecgBoot平台的AIGC功能模块，是一套类似`Dify`的`AIGC应用开发平台`+`知识库问答`，是一款基于LLM大语言模型AI应用平台和 RAG 的知识库问答系统。

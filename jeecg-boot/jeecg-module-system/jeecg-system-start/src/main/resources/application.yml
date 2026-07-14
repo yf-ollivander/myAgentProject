@@ -5,3 +5,11 @@ spring:
     import: optional:classpath:config/application-liteflow.yml
   profiles:
     active: '@profile.name@'
+
+ai:
+  agent:
+    # Credentials remain unusable until deployment injects a stable 32-byte key.
+    secret-key: ${AI_CONFIG_SECRET_KEY:}
+    callback-base-url: ${AI_CALLBACK_BASE_URL:}
+    feishu-api-base-url: ${AI_FEISHU_API_BASE_URL:https://open.feishu.cn}
+    mock-enabled: ${AI_MOCK_AGENT_ENABLED:false}
