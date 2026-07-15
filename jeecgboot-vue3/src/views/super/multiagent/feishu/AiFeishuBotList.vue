@@ -34,9 +34,10 @@
     { title: '名称', dataIndex: 'name', width: 180 },
     { title: 'Bot Key', dataIndex: 'botKey', width: 160 },
     { title: 'App ID', dataIndex: 'appId', width: 180 },
+    { title: '入口模式', dataIndex: 'entryMode', width: 130, customRender: ({ text }) => entryModeLabels[text] || text },
     { title: '接收方式', dataIndex: 'connectionMode', width: 120, customRender: () => 'SDK 长连接' },
     { title: '连接状态', dataIndex: 'connectionStatus', width: 110, customRender: ({ text }) => connectionStatusLabels[text] || text },
-    { title: '事件处理', dataIndex: 'eventHandlingStatus', width: 180, customRender: () => '仅接收（后处理待实现）' },
+    { title: '事件处理', dataIndex: 'eventHandlingStatus', width: 110, customRender: ({ text }) => text === 'PROCESSING_ENABLED' ? '可处理' : '仅接收' },
     { title: '默认会话', dataIndex: 'defaultChatId', width: 190, customRender: ({ text }) => text || '-' },
     { title: '应用凭据', dataIndex: 'appSecretConfigured', width: 100, customRender: ({ text }) => text ? '已配置' : '未配置' },
     { title: '状态', dataIndex: 'enabled', width: 90, customRender: ({ text }) => (text ? '启用' : '禁用') },
@@ -47,9 +48,13 @@
     STARTING: '启动中', CONNECTED: '已连接', FAILED: '连接失败',
     DISCONNECTED: '未连接', DISABLED: '未启用',
   };
+  const entryModeLabels = { DIRECT_AGENT: '直连 Agent', ORCHESTRATOR: '编排入口' };
   const searchFormSchema = [
     { label: 'Bot Key', field: 'botKey', component: 'Input' },
     { label: '名称', field: 'name', component: 'Input' },
+    { label: '入口模式', field: 'entryMode', component: 'Select', componentProps: { options: [
+      { label: '直连 Agent', value: 'DIRECT_AGENT' }, { label: '编排入口', value: 'ORCHESTRATOR' },
+    ] } },
     { label: '状态', field: 'enabled', component: 'Select', componentProps: { options: [{ label: '启用', value: true }, { label: '禁用', value: false }] } },
   ];
   const { tableContext } = useListPage({ tableProps: {

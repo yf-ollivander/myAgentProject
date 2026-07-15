@@ -6,6 +6,7 @@ AIGC应用平台介绍
 Module 1 adds three management areas under the `Multi-Agent Management` menu:
 
 - Agents: `/api/ai/agents`
+- Authorized Agent options: `/api/ai/agents/options`
 - HTTP Connectors: `/api/ai/connectors`
 - Feishu bots: `/api/ai/feishu-bots`
 
@@ -18,9 +19,9 @@ Optional settings:
 - `AI_MOCK_AGENT_ENABLED=true`: exposes the deterministic development endpoint `/api/ai/mock-agent/execute`.
 - `AI_AGENT_ALLOWED_HOSTS`: comma-separated exact hosts or `*.example.com` patterns allowed for Connector calls. An empty value permits all HTTP/HTTPS hosts and should not be used in production.
 
-Existing databases must run `V3.9.3_1__multi_agent_config.sql` manually when Flyway is disabled. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
+Existing databases must run `V3.9.3_1__multi_agent_config.sql`, `V3.9.3_2__multi_agent_menu_redirect.sql`, and `V3.9.3_3__multi_agent_bot_entry_mode.sql` in order when Flyway is disabled. Databases that already completed Module 1 V1.0 only need the V1.1 `V3.9.3_3` migration. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
 
-Connector and Feishu tests call external services but never create formal Agent runs. Enabled Feishu application bots now receive `im.message.receive_v1` through the official SDK long connection. The receiver intentionally records metadata only; Agent lookup, deduplication, run creation, command parsing, replies, Redis scheduling, pipelines, and run inspection remain outside this module.
+Connector and Feishu tests call external services but never create formal Agent runs. Feishu bots support `DIRECT_AGENT` and `ORCHESTRATOR`; only direct bots can be bound to an Agent. `commandEnabled=false` keeps metadata-only reception, while `true` hands validated events to a bounded internal processor without doing work on the SDK callback thread. User binding, deduplication, run creation, command parsing, replies, Redis scheduling, pipelines, and run inspection remain outside this module.
 
 一个全栈式 AI 开发平台，旨在帮助开发者快速构建和部署个性化的 AI 应用。
 

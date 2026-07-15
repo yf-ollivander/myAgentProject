@@ -15,11 +15,14 @@ import com.baomidou.mybatisplus.core.metadata.OrderItem;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.constant.DataBaseConstant;
+import org.jeecg.common.constant.SymbolConstant;
+import org.jeecg.common.constant.TenantConstant;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.util.JeecgDataAutorUtils;
 import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.util.SqlConcatUtil;
 import org.jeecg.common.system.vo.SysPermissionDataRuleModel;
+import org.jeecg.common.system.vo.SysUserCacheInfo;
 import org.jeecg.common.util.*;
 import org.springframework.util.NumberUtils;
 
@@ -819,22 +822,30 @@ public class QueryGenerator {
 		}catch (Exception e){
 			log.error("根据request对象获取权限数据失败，可能是定时任务中执行的。", e);
 		}
-		if(list != null&&list.size()>0){
-			if(list.get(0)==null){
-				return ruleMap;
+		return getRuleMap(list);
+	}
+
+	private static Map<String, SysPermissionDataRuleModel> getRuleMap(List<SysPermissionDataRuleModel> list) {
+		Map<String, SysPermissionDataRuleModel> ruleMap = new HashMap<>(5);
+		if (list == null || list.isEmpty() || list.get(0) == null) {
+			return ruleMap;
+		}
+		for (SysPermissionDataRuleModel rule : list) {
+			String column = rule.getRuleColumn();
+			if (QueryRuleEnum.SQL_RULES.getValue().equals(rule.getRuleConditions())) {
+				column = SQL_RULES_COLUMN + rule.getId();
 			}
-			for (SysPermissionDataRuleModel rule : list) {
-				String column = rule.getRuleColumn();
-				if(QueryRuleEnum.SQL_RULES.getValue().equals(rule.getRuleConditions())) {
-					column = SQL_RULES_COLUMN+rule.getId();
-				}
-				ruleMap.put(column, rule);
-			}
+			ruleMap.put(column, rule);
 		}
 		return ruleMap;
 	}
 	
 	private static void addRuleToQueryWrapper(SysPermissionDataRuleModel dataRule, String name, Class propertyType, QueryWrapper<?> queryWrapper) {
+		addRuleToQueryWrapper(dataRule, name, propertyType, queryWrapper, null, null);
+	}
+
+	private static void addRuleToQueryWrapper(SysPermissionDataRuleModel dataRule, String name, Class propertyType,
+			QueryWrapper<?> queryWrapper, SysUserCacheInfo userInfo, String tenantId) {
 		QueryRuleEnum rule = QueryRuleEnum.getByValue(dataRule.getRuleConditions());
 		if(rule.equals(QueryRuleEnum.IN) && ! propertyType.equals(String.class)) {
 			String[] values = dataRule.getRuleValue().split(",");
@@ -845,9 +856,9 @@ public class QueryGenerator {
 			addEasyQuery(queryWrapper, name, rule, objs);
 		}else {
 			if (propertyType.equals(String.class)) {
-				addEasyQuery(queryWrapper, name, rule, converRuleValue(dataRule.getRuleValue()));
+				addEasyQuery(queryWrapper, name, rule, converRuleValue(dataRule.getRuleValue(), userInfo, tenantId));
 			}else if (propertyType.equals(Date.class)) {
-				String dateStr =converRuleValue(dataRule.getRuleValue());
+				String dateStr = converRuleValue(dataRule.getRuleValue(), userInfo, tenantId);
                 int length = 10;
 				if(dateStr.length()==length){
 					addEasyQuery(queryWrapper, name, rule, DateUtils.str2Date(dateStr,DateUtils.date_sdf.get()));
@@ -856,13 +867,24 @@ public class QueryGenerator {
 				}
 			}else {
 				// 代码逻辑说明: [issues/7481]多租户模式下 数据权限使用变量：#{tenant_id} 报错------------
-				addEasyQuery(queryWrapper, name, rule, NumberUtils.parseNumber(converRuleValue(dataRule.getRuleValue()), propertyType));
+				addEasyQuery(queryWrapper, name, rule, NumberUtils.parseNumber(
+						converRuleValue(dataRule.getRuleValue(), userInfo, tenantId), propertyType));
 			}
 		}
 	}
 	
 	public static String converRuleValue(String ruleValue) {
-		String value = JwtUtil.getUserSystemData(ruleValue,null);
+		return converRuleValue(ruleValue, null, null);
+	}
+
+	private static String converRuleValue(String ruleValue, SysUserCacheInfo userInfo, String tenantId) {
+		String value = JwtUtil.getUserSystemData(ruleValue, userInfo);
+		if (value == null && oConvertUtils.isNotEmpty(tenantId)
+				&& (ruleValue.contains(TenantConstant.TENANT_ID) || ruleValue.contains(TenantConstant.TENANT_ID_TABLE))) {
+			int suffixIndex = ruleValue.indexOf(SymbolConstant.RIGHT_CURLY_BRACKET);
+			String suffix = suffixIndex >= 0 ? ruleValue.substring(suffixIndex + 1) : "";
+			value = tenantId + suffix;
+		}
 		return value!= null ? value : ruleValue;
 	}
 
@@ -887,13 +909,17 @@ public class QueryGenerator {
 	}
 	
 	public static String getSqlRuleValue(String sqlRule){
+		return getSqlRuleValue(sqlRule, null, null);
+	}
+
+	private static String getSqlRuleValue(String sqlRule, SysUserCacheInfo userInfo, String tenantId) {
 		try {
 			Set<String> varParams = getSqlRuleParams(sqlRule);
 			if (varParams == null || varParams.isEmpty()) {
 				return sqlRule;
 			}
 			for(String var:varParams){
-				String tempValue = converRuleValue(var);
+				String tempValue = converRuleValue(var, userInfo, tenantId);
 				sqlRule = sqlRule.replace("#{"+var+"}",tempValue);
 			}
 		} catch (Exception e) {
@@ -1012,6 +1038,33 @@ public class QueryGenerator {
 			}
 			if(ruleMap.containsKey(name)) {
 				addRuleToQueryWrapper(ruleMap.get(name), column, origDescriptors[i].getPropertyType(), queryWrapper);
+			}
+		}
+	}
+
+	/**
+	 * Apply data rules for a named user when there is no HTTP request, such as a Feishu event worker.
+	 */
+	public static void installAuthMplus(QueryWrapper<?> queryWrapper, Class<?> clazz,
+			List<SysPermissionDataRuleModel> dataRules, SysUserCacheInfo userInfo, String tenantId) {
+		Map<String, SysPermissionDataRuleModel> ruleMap = getRuleMap(dataRules);
+		PropertyDescriptor[] origDescriptors = PropertyUtils.getPropertyDescriptors(clazz);
+		for (String c : ruleMap.keySet()) {
+			if (oConvertUtils.isNotEmpty(c) && c.startsWith(SQL_RULES_COLUMN)) {
+				String sqlRule = getSqlRuleValue(ruleMap.get(c).getRuleValue(), userInfo, tenantId);
+				SqlInjectionUtil.filterContent(sqlRule, null);
+				queryWrapper.and(i -> i.apply(sqlRule));
+			}
+		}
+		for (PropertyDescriptor descriptor : origDescriptors) {
+			String name = descriptor.getName();
+			if (judgedIsUselessField(name)) {
+				continue;
+			}
+			String column = ReflectHelper.getTableFieldName(clazz, name);
+			if (column != null && ruleMap.containsKey(name)) {
+				addRuleToQueryWrapper(ruleMap.get(name), column, descriptor.getPropertyType(), queryWrapper,
+						userInfo, tenantId);
 			}
 		}
 	}

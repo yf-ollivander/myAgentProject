@@ -26,7 +26,6 @@ import java.util.concurrent.Future;
 @Component
 public class FeishuLongConnectionManager {
     public static final String CONNECTION_MODE = "LONG_CONNECTION";
-    public static final String EVENT_HANDLING_STATUS = "RECEIVE_ONLY";
 
     private static final long READY_TIMEOUT_MS = 15_000L;
 
@@ -67,7 +66,7 @@ public class FeishuLongConnectionManager {
                     .onP2MessageReceiveV1(new ImService.P2MessageReceiveV1Handler() {
                         @Override
                         public void handle(P2MessageReceiveV1 event) {
-                            eventReceiver.accept(bot.getBotKey(), event);
+                            eventReceiver.accept(bot, event);
                         }
                     })
                     .build();

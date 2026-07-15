@@ -1,6 +1,6 @@
 export default {
   preset: 'ts-jest',
-  roots: ['<rootDir>/tests/'],
+  roots: ['<rootDir>/tests/', '<rootDir>/src/'],
   clearMocks: true,
   moduleDirectories: ['node_modules', 'src'],
   moduleFileExtensions: ['js', 'ts', 'vue', 'tsx', 'jsx', 'json', 'node'],
@@ -27,7 +27,7 @@ export default {
     '\\?worker$': '<rootDir>/tests/__mocks__/workerMock.ts',
     '^/@/(.*)$': '<rootDir>/src/$1',
   },
-  testEnvironment: 'jsdom',
+  testEnvironment: 'node',
   verbose: true,
   collectCoverage: false,
   coverageDirectory: 'coverage',

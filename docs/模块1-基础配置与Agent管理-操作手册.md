@@ -19,7 +19,8 @@
 | 内容 | 路径 |
 | --- | --- |
 | 后端 Agent 配置领域 | `jeecg-boot/jeecg-boot-module/jeecg-boot-module-airag/src/main/java/org/jeecg/modules/airag/agent` |
-| Flyway 增量脚本 | `jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_1__multi_agent_config.sql` |
+| Flyway 基础迁移 | `jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_1__multi_agent_config.sql` |
+| V1.1 入口模式迁移 | `jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_3__multi_agent_bot_entry_mode.sql` |
 | 新环境 MySQL 初始化脚本 | `jeecg-boot/db/multi-agent-config.sql` |
 | 前端页面 | `jeecgboot-vue3/src/views/super/multiagent` |
 | 测试方案 | `tests/【基础配置与Agent管理】_20260713/测试方案.md` |
@@ -74,17 +75,27 @@ PowerShell 对 `>` 的编码处理可能因版本不同而变化。生产环境�
 
 ### 4.3 已有数据库：手工执行增量脚本
 
-推荐在 MySQL 客户端中执行：
+如果数据库尚未安装模块 1，按顺序执行三个脚本：
 
 ```sql
 USE `jeecg-boot`;
 SOURCE D:/Project/myAgentProduct/jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_1__multi_agent_config.sql;
+SOURCE D:/Project/myAgentProduct/jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_2__multi_agent_menu_redirect.sql;
+SOURCE D:/Project/myAgentProduct/jeecg-boot/jeecg-module-system/jeecg-system-start/src/main/resources/flyway/sql/mysql/V3.9.3_3__multi_agent_bot_entry_mode.sql;
 ```
+
+如果 V1.0 已经运行，只执行 `V3.9.3_3__multi_agent_bot_entry_mode.sql`。不要重复执行不带幂等保护的 V1.1 `ALTER TABLE`。
 
 也可以在 Windows `cmd.exe` 中执行：
 
 ```bat
 mysql -h 127.0.0.1 -P 3306 -u root -p jeecg-boot < D:\Project\myAgentProduct\jeecg-boot\jeecg-module-system\jeecg-system-start\src\main\resources\flyway\sql\mysql\V3.9.3_1__multi_agent_config.sql
+```
+
+V1.1 已有环境命令：
+
+```bat
+mysql -h 127.0.0.1 -P 3306 -u root -p jeecg-boot < D:\Project\myAgentProduct\jeecg-boot\jeecg-module-system\jeecg-system-start\src\main\resources\flyway\sql\mysql\V3.9.3_3__multi_agent_bot_entry_mode.sql
 ```
 
 如果数据库在当前 Compose 容器中，宿主机映射端口是 `13306`：
@@ -109,6 +120,13 @@ Compose 默认 root 密码是 `root`。非开发环境必须使用实际密码�
 USE `jeecg-boot`;
 
 SHOW TABLES LIKE 'ai_%';
+
+SHOW COLUMNS FROM ai_feishu_bot LIKE 'entry_mode';
+SHOW COLUMNS FROM ai_feishu_bot LIKE 'command_enabled';
+
+SELECT entry_mode, command_enabled, COUNT(*)
+FROM ai_feishu_bot
+GROUP BY entry_mode, command_enabled;
 
 SELECT COUNT(*) AS agent_menu_count
 FROM sys_permission
@@ -347,12 +365,14 @@ Connector 固定发送 POST JSON，不跟随重定向。目标接口需返回符
 操作顺序：
 
 1. 在 JEECG 新增飞书机器人，填写 Bot Key、名称、App ID 和 App Secret。
-2. 点击“启用”，确认列表中的连接状态由 `STARTING` 变为 `CONNECTED`。
-3. 在飞书开放平台的应用“事件与回调”中选择并保存“使用长连接接收事件”。飞书要求先建立 SDK 长连接才能保存该模式。
-4. 添加“接收消息 v2.0”事件订阅，并确保应用具备相应消息权限和已发布版本。
-5. 如需发送测试消息，再填写默认 Chat ID，点击“测试”并确认目标会话收到消息。
+2. 选择入口模式：直连 Agent 使用 `DIRECT_AGENT`，统一命令入口使用 `ORCHESTRATOR`。
+3. “仅接收”只记录脱敏元数据；开启“可处理”后事件会移交内部处理器，但模块 1 本身仍不创建运行。
+4. 点击“启用”，确认列表中的连接状态由 `STARTING` 变为 `CONNECTED`。
+5. 在飞书开放平台的应用“事件与回调”中选择并保存“使用长连接接收事件”。飞书要求先建立 SDK 长连接才能保存该模式。
+6. 添加“接收消息 v2.0”事件订阅，并确保应用具备相应消息权限和已发布版本。
+7. 如需发送测试消息，再填写默认 Chat ID，点击“测试”并确认目标会话收到消息。
 
-当前通过飞书官方 Java SDK 长连接接收事件，不需要公网回调地址、Verification Token 或 Encrypt Key。事件接收器只记录 requestId、messageId、chatId 和消息类型，不记录消息正文。Agent 绑定查找、事件幂等、运行创建、`@机器人` 指令解析和群内回复仍是明确的后续工作，当前不会执行这些操作。
+当前通过飞书官方 Java SDK 长连接接收事件，不需要公网回调地址、Verification Token 或 Encrypt Key。`ORCHESTRATOR` 不允许绑定单个 Agent；`DIRECT_AGENT` 保留一个启用机器人最多绑定一个启用 Agent 的约束。事件正文只存在于内部敏感 DTO，不进入 `@AutoLog` 或普通日志。用户绑定、事件幂等、运行创建、指令解析和群内回复仍是后续工作。
 
 官方参考：
 
@@ -396,6 +416,7 @@ Connector 固定发送 POST JSON，不跟随重定向。目标接口需返回符
 - [ ] 管理员已授权，普通角色权限符合预期。
 - [ ] 凭据字段存储的是以 `v1:` 开头的密文，不是明文。
 - [ ] 逻辑删除后相同代码无法重新创建。
+- [ ] `entry_mode`、`command_enabled` 字段存在，旧机器人默认为 `DIRECT_AGENT` 和仅接收。
 
 ### 11.2 后端和安全
 
@@ -405,6 +426,9 @@ Connector 固定发送 POST JSON，不跟随重定向。目标接口需返回符
 - [ ] 401、500、超时和非法 JSON 返回脱敏错误。
 - [ ] 跨租户、跨部门和篡改 ID 无法读取或修改资源。
 - [ ] 20 个并发 Agent 启用请求绑定同一机器人时最多一个成功。
+- [ ] 跨租户/部门调用 `/api/ai/agents/options` 不返回不可见 Agent。
+- [ ] `ORCHESTRATOR` 可无 Agent 启用，且不能绑定或被切换为仍有 Agent 引用的模式。
+- [ ] 慢速或异常内部处理器不阻塞飞书 SDK 接收线程。
 
 ### 11.3 日志脱敏
 
@@ -428,6 +452,7 @@ WHERE create_time >= NOW() - INTERVAL 1 DAY
 - [ ] 移动端抽屉不超出视口，表单字段按单列排列。
 - [ ] 编辑详情不回填任何密钥。
 - [ ] 启停和删除有确认提示。
+- [ ] 飞书列表显示入口模式、连接状态和仅接收/可处理状态。
 - [ ] 列表显示启用状态和最近测试状态。
 
 ## 12. 回滚建议

@@ -6,7 +6,8 @@ import org.jeecg.modules.airag.agent.dto.AiConfigDtos;
 import org.jeecg.modules.airag.agent.entity.AiFeishuBot;
 
 public interface IAiFeishuBotService extends IService<AiFeishuBot> {
-    IPage<AiConfigDtos.FeishuBotView> pageViews(String botKey, String name, Boolean enabled, int pageNo, int pageSize);
+    IPage<AiConfigDtos.FeishuBotView> pageViews(String botKey, String name, Boolean enabled, String entryMode,
+                                                int pageNo, int pageSize);
     AiConfigDtos.FeishuBotView getView(String id);
     AiFeishuBot getVisibleEntity(String id);
     String create(AiConfigDtos.FeishuBotUpsertRequest request);

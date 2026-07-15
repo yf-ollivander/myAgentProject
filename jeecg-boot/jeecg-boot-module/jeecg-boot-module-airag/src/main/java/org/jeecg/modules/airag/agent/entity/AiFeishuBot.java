@@ -17,6 +17,8 @@ public class AiFeishuBot extends AbstractAiConfigEntity {
     private String verificationTokenCipher;
     private String encryptKeyCipher;
     private String defaultChatId;
+    private String entryMode;
+    private Boolean commandEnabled;
     private Boolean enabled;
     private String lastTestStatus;
     private String lastTestMessage;

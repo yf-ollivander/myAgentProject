@@ -23,6 +23,8 @@ public final class AiConfigDtos {
     }
 
     private static final String CODE_PATTERN = "^[A-Za-z][A-Za-z0-9_-]*$";
+    public static final String DIRECT_AGENT = "DIRECT_AGENT";
+    public static final String ORCHESTRATOR = "ORCHESTRATOR";
 
     @Data
     public static class AgentUpsertRequest {
@@ -99,6 +101,9 @@ public final class AiConfigDtos {
         private String encryptKey;
         @Size(max = 100)
         private String defaultChatId;
+        @NotBlank @Pattern(regexp = "DIRECT_AGENT|ORCHESTRATOR")
+        private String entryMode = DIRECT_AGENT;
+        private Boolean commandEnabled = false;
         private boolean clearAppSecret;
         private boolean clearVerificationToken;
         private boolean clearEncryptKey;
@@ -154,6 +159,14 @@ public final class AiConfigDtos {
     }
 
     @Data
+    public static class AgentOption {
+        private String id;
+        private String agentCode;
+        private String name;
+        private String description;
+    }
+
+    @Data
     public static class ConnectorView {
         private String id;
         private String connectorCode;
@@ -186,6 +199,8 @@ public final class AiConfigDtos {
         private boolean verificationTokenConfigured;
         private boolean encryptKeyConfigured;
         private String defaultChatId;
+        private String entryMode;
+        private Boolean commandEnabled;
         private String callbackUrl;
         private String connectionMode;
         private String connectionStatus;

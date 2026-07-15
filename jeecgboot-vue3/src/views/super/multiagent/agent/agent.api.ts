@@ -3,6 +3,7 @@ import { defHttp } from '/@/utils/http/axios';
 const base = '/api/ai/agents';
 
 export const listAgents = (params) => defHttp.get({ url: base, params });
+export const listAgentOptions = (params) => defHttp.get({ url: `${base}/options`, params });
 export const getAgent = (id: string) => defHttp.get({ url: `${base}/${id}` });
 export const createAgent = (data) => defHttp.post({ url: base, data });
 export const updateAgent = (id: string, data) => defHttp.put({ url: `${base}/${id}`, data });

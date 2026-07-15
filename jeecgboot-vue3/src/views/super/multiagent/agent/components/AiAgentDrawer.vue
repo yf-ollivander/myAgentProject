@@ -86,7 +86,7 @@
     currentId.value = data?.id || '';
     const [connectors, bots] = await Promise.all([
       listConnectors({ enabled: true, pageNo: 1, pageSize: 200 }),
-      listFeishuBots({ enabled: true, pageNo: 1, pageSize: 200 }),
+      listFeishuBots({ enabled: true, entryMode: 'DIRECT_AGENT', pageNo: 1, pageSize: 200 }),
     ]);
     connectorOptions.value = (connectors?.records || []).map((item) => ({ label: `${item.name} (${item.connectorCode})`, value: item.id }));
     botOptions.value = (bots?.records || []).map((item) => ({ label: `${item.name} (${item.botKey})`, value: item.id }));

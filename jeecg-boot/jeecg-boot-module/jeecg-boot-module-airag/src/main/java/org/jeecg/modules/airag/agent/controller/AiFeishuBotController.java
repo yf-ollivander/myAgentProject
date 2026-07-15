@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
@@ -33,9 +34,10 @@ public class AiFeishuBotController {
             @RequestParam(required = false) String botKey,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) Boolean enabled,
+            @RequestParam(required = false) @Pattern(regexp = "DIRECT_AGENT|ORCHESTRATOR") String entryMode,
             @RequestParam(defaultValue = "1") @Min(1) Integer pageNo,
             @RequestParam(defaultValue = "10") @Min(1) @Max(200) Integer pageSize) {
-        return Result.OK(service.pageViews(botKey, name, enabled, pageNo, pageSize));
+        return Result.OK(service.pageViews(botKey, name, enabled, entryMode, pageNo, pageSize));
     }
 
     @GetMapping("/{id}")

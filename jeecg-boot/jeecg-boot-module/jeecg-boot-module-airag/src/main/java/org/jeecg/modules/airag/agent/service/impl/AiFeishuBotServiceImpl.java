@@ -42,12 +42,14 @@ public class AiFeishuBotServiceImpl extends ServiceImpl<AiFeishuBotMapper, AiFei
     }
 
     @Override
-    public IPage<AiConfigDtos.FeishuBotView> pageViews(String botKey, String name, Boolean enabled, int pageNo, int pageSize) {
+    public IPage<AiConfigDtos.FeishuBotView> pageViews(String botKey, String name, Boolean enabled, String entryMode,
+                                                       int pageNo, int pageSize) {
         QueryWrapper<AiFeishuBot> query = new QueryWrapper<>();
         query.lambda()
                 .like(StringUtils.hasText(botKey), AiFeishuBot::getBotKey, botKey)
                 .like(StringUtils.hasText(name), AiFeishuBot::getName, name)
                 .eq(enabled != null, AiFeishuBot::getEnabled, enabled)
+                .eq(StringUtils.hasText(entryMode), AiFeishuBot::getEntryMode, entryMode)
                 .orderByDesc(AiFeishuBot::getCreateTime);
         QueryGenerator.installAuthMplus(query, AiFeishuBot.class);
         Page<AiFeishuBot> page = page(new Page<>(pageNo, pageSize), query);
@@ -93,11 +95,17 @@ public class AiFeishuBotServiceImpl extends ServiceImpl<AiFeishuBotMapper, AiFei
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(String id, AiConfigDtos.FeishuBotUpsertRequest request) {
-        AiFeishuBot entity = getVisibleEntity(id);
+        getVisibleEntity(id);
+        // Mode changes share this row lock with Agent binding so neither side can observe stale mode state.
+        AiFeishuBot entity = baseMapper.selectByIdForUpdate(id);
         if (!entity.getBotKey().equals(request.getBotKey())) {
             throw new JeecgBootException("botKey is immutable");
         }
         ensureUniqueAppId(request.getAppId(), id);
+        if (AiConfigDtos.ORCHESTRATOR.equals(request.getEntryMode())
+                && agentMapper.selectCount(new LambdaQueryWrapper<AiAgent>().eq(AiAgent::getFeishuBotId, id)) > 0) {
+            throw new JeecgBootException("Remove all Agent references before switching the bot to ORCHESTRATOR");
+        }
         apply(entity, request);
         if (Boolean.TRUE.equals(entity.getEnabled())) {
             validateEnabled(entity);
@@ -165,6 +173,8 @@ public class AiFeishuBotServiceImpl extends ServiceImpl<AiFeishuBotMapper, AiFei
         entity.setName(request.getName());
         entity.setAppId(request.getAppId());
         entity.setDefaultChatId(request.getDefaultChatId());
+        entity.setEntryMode(request.getEntryMode());
+        entity.setCommandEnabled(Boolean.TRUE.equals(request.getCommandEnabled()));
         // Each clear flag is explicit because blank form values mean "keep the configured credential".
         entity.setAppSecretCipher(updateSecret(entity.getAppSecretCipher(), request.getAppSecret(), request.isClearAppSecret()));
         entity.setVerificationTokenCipher(updateSecret(entity.getVerificationTokenCipher(), request.getVerificationToken(), request.isClearVerificationToken()));
@@ -198,13 +208,15 @@ public class AiFeishuBotServiceImpl extends ServiceImpl<AiFeishuBotMapper, AiFei
         view.setVerificationTokenConfigured(StringUtils.hasText(entity.getVerificationTokenCipher()));
         view.setEncryptKeyConfigured(StringUtils.hasText(entity.getEncryptKeyCipher()));
         view.setDefaultChatId(entity.getDefaultChatId());
+        view.setEntryMode(entity.getEntryMode());
+        view.setCommandEnabled(entity.getCommandEnabled());
         String base = StringUtils.hasText(properties.getCallbackBaseUrl())
                 ? properties.getCallbackBaseUrl().replaceAll("/+$", "") : "";
         view.setCallbackUrl(base + "/api/ai/callbacks/feishu/" + entity.getBotKey());
         view.setConnectionMode(FeishuLongConnectionManager.CONNECTION_MODE);
         view.setConnectionStatus(Boolean.TRUE.equals(entity.getEnabled())
                 ? longConnectionManager.getStatus(entity.getId()) : "DISABLED");
-        view.setEventHandlingStatus(FeishuLongConnectionManager.EVENT_HANDLING_STATUS);
+        view.setEventHandlingStatus(Boolean.TRUE.equals(entity.getCommandEnabled()) ? "PROCESSING_ENABLED" : "RECEIVE_ONLY");
         view.setEnabled(entity.getEnabled());
         view.setLastTestStatus(entity.getLastTestStatus());
         view.setLastTestMessage(entity.getLastTestMessage());

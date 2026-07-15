@@ -14,6 +14,8 @@ import org.jeecg.modules.airag.agent.service.IAiAgentService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Validated
 @RestController
 @RequestMapping("/api/ai/agents")
@@ -36,6 +38,15 @@ public class AiAgentController {
             @RequestParam(defaultValue = "1") @Min(1) Integer pageNo,
             @RequestParam(defaultValue = "10") @Min(1) @Max(200) Integer pageSize) {
         return Result.OK(service.pageViews(agentCode, name, enabled, pageNo, pageSize));
+    }
+
+    @GetMapping("/options")
+    @RequiresPermissions("ai:agent:list")
+    @PermissionData(pageComponent = COMPONENT)
+    public Result<List<AiConfigDtos.AgentOption>> options(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(200) Integer limit) {
+        return Result.OK(service.listVisibleOptions(keyword, limit));
     }
 
     @GetMapping("/{id}")

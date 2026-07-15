@@ -1,18 +1,22 @@
 <template>
   <BasicDrawer v-bind="$attrs" @register="registerDrawer" :title="title" width="min(680px, 100vw)" showFooter destroyOnClose @ok="submit">
     <a-form ref="formRef" :model="model" :rules="rules" layout="vertical">
-      <!-- Long connection ingestion is ready; downstream Agent execution is intentionally deferred. -->
-      <a-alert
-        class="!mb-4"
-        type="info"
-        show-icon
-        message="事件接收方式：飞书 SDK 长连接"
-        description="长连接接收已接入；当前仅记录事件元数据，Agent 触发、幂等处理、执行和群内回复暂未实现。"
-      />
       <!-- Stack paired identity fields on narrow screens so long IDs do not collide. -->
       <a-row :gutter="16">
         <a-col :xs="24" :md="12"><a-form-item label="Bot Key" name="botKey"><a-input v-model:value="model.botKey" :disabled="isUpdate" maxlength="64" /></a-form-item></a-col>
         <a-col :xs="24" :md="12"><a-form-item label="名称" name="name"><a-input v-model:value="model.name" maxlength="100" /></a-form-item></a-col>
+      </a-row>
+      <a-row :gutter="16">
+        <a-col :xs="24" :md="12">
+          <a-form-item label="入口模式" name="entryMode">
+            <a-segmented v-model:value="model.entryMode" block :options="entryModeOptions" />
+          </a-form-item>
+        </a-col>
+        <a-col :xs="24" :md="12">
+          <a-form-item label="命令处理" name="commandEnabled">
+            <a-switch v-model:checked="model.commandEnabled" checked-children="可处理" un-checked-children="仅接收" />
+          </a-form-item>
+        </a-col>
       </a-row>
       <a-form-item label="App ID" name="appId"><a-input v-model:value="model.appId" maxlength="100" /></a-form-item>
       <a-form-item label="App Secret" name="appSecret">
@@ -40,17 +44,22 @@
   const currentId = ref('');
   const model = reactive<any>({});
   const configured = reactive({ appSecret: false });
+  const entryModeOptions = [
+    { label: '直连 Agent', value: 'DIRECT_AGENT' },
+    { label: '编排入口', value: 'ORCHESTRATOR' },
+  ];
   const rules = {
     botKey: [{ required: true, message: '请输入 Bot Key' }, { pattern: /^[A-Za-z][A-Za-z0-9_-]*$/, message: 'Bot Key 必须以字母开头' }],
     name: [{ required: true, message: '请输入名称' }],
     appId: [{ required: true, message: '请输入 App ID' }],
+    entryMode: [{ required: true, message: '请选择入口模式' }],
   };
   const title = computed(() => (isUpdate.value ? '编辑飞书机器人' : '新增飞书机器人'));
 
   const [registerDrawer, { setDrawerProps, closeDrawer }] = useDrawerInner(async (data) => {
     formRef.value?.resetFields();
     Object.keys(model).forEach((key) => delete model[key]);
-    Object.assign(model, { clearAppSecret: false });
+    Object.assign(model, { entryMode: 'DIRECT_AGENT', commandEnabled: false, clearAppSecret: false });
     Object.assign(configured, { appSecret: false });
     isUpdate.value = !!data?.id;
     currentId.value = data?.id || '';
@@ -68,6 +77,7 @@
       setDrawerProps({ confirmLoading: true });
       const payload = {
         botKey: model.botKey, name: model.name, appId: model.appId, defaultChatId: model.defaultChatId || null,
+        entryMode: model.entryMode, commandEnabled: !!model.commandEnabled,
         // Long connection mode authenticates with the application credential only.
         appSecret: model.appSecret || null, clearAppSecret: !!model.clearAppSecret,
       };
