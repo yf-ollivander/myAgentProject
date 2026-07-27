@@ -1,0 +1,14 @@
+package org.jeecg.modules.airag.execution.service;
+
+import lombok.Getter;
+
+@Getter
+public enum ExecutionErrorCode {
+    RUN_NOT_FOUND_OR_FORBIDDEN(404), RUN_INVALID_REQUEST(400), RUN_REQUEST_CONFLICT(409),
+    RUN_DEPENDENCY_UNAVAILABLE(400), RUN_ALREADY_TERMINAL(409), RUN_NOT_RETRYABLE(409),
+    INTERVENTION_NOT_FOUND_OR_CLOSED(404), INTERVENTION_ACTION_INVALID(400),
+    INTERVENTION_REQUEST_CONFLICT(409), AGENT_RESULT_INVALID(400), ARTIFACT_INVALID(400),
+    EXECUTOR_GATEWAY_UNAVAILABLE(503), EXECUTOR_RECOVERY_EXHAUSTED(500);
+    private final int resultCode;
+    ExecutionErrorCode(int resultCode) { this.resultCode = resultCode; }
+}

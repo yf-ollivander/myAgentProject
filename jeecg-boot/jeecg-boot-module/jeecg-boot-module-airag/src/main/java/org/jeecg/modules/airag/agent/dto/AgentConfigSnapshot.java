@@ -1,5 +1,7 @@
 package org.jeecg.modules.airag.agent.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import lombok.Builder;
 import lombok.Value;
 
@@ -8,6 +10,7 @@ import java.util.Map;
 
 @Value
 @Builder
+@JsonDeserialize(builder = AgentConfigSnapshot.AgentConfigSnapshotBuilder.class)
 public class AgentConfigSnapshot implements Serializable {
     String agentId;
     String agentCode;
@@ -18,8 +21,12 @@ public class AgentConfigSnapshot implements Serializable {
     ConnectorSnapshot connector;
     FeishuBotSnapshot feishuBot;
 
+    @JsonPOJOBuilder(withPrefix = "")
+    public static class AgentConfigSnapshotBuilder {}
+
     @Value
     @Builder
+    @JsonDeserialize(builder = ConnectorSnapshot.ConnectorSnapshotBuilder.class)
     public static class ConnectorSnapshot implements Serializable {
         String connectorId;
         String connectorCode;
@@ -32,14 +39,21 @@ public class AgentConfigSnapshot implements Serializable {
         Integer connectTimeout;
         Integer readTimeout;
         boolean secretConfigured;
+
+        @JsonPOJOBuilder(withPrefix = "")
+        public static class ConnectorSnapshotBuilder {}
     }
 
     @Value
     @Builder
+    @JsonDeserialize(builder = FeishuBotSnapshot.FeishuBotSnapshotBuilder.class)
     public static class FeishuBotSnapshot implements Serializable {
         String botId;
         String botKey;
         String defaultChatId;
         boolean credentialsConfigured;
+
+        @JsonPOJOBuilder(withPrefix = "")
+        public static class FeishuBotSnapshotBuilder {}
     }
 }

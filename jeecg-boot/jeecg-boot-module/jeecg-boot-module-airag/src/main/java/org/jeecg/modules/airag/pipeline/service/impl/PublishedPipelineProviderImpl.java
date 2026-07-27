@@ -3,7 +3,10 @@ package org.jeecg.modules.airag.pipeline.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.jeecg.common.config.TenantContext;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
+import org.jeecg.modules.airag.agent.service.AuthorizedAgentConfigProvider;
+import org.jeecg.modules.airag.pipeline.contract.AgentNodeConfig;
 import org.jeecg.modules.airag.pipeline.contract.PipelineDefinitionCodec;
+import org.jeecg.modules.airag.pipeline.contract.PipelineEnums;
 import org.jeecg.modules.airag.pipeline.contract.PublishedPipelineSnapshot;
 import org.jeecg.modules.airag.pipeline.dto.PipelineDtos;
 import org.jeecg.modules.airag.pipeline.entity.AiPipeline;
@@ -13,6 +16,7 @@ import org.jeecg.modules.airag.pipeline.mapper.AiPipelineMapper;
 import org.jeecg.modules.airag.pipeline.mapper.AiPipelineTriggerKeyMapper;
 import org.jeecg.modules.airag.pipeline.mapper.AiPipelineVersionMapper;
 import org.jeecg.modules.airag.pipeline.service.AuthorizedPipelineResolver;
+import org.jeecg.modules.airag.pipeline.service.AuthorizedPipelineBotResolver;
 import org.jeecg.modules.airag.pipeline.service.PipelinePermissionService;
 import org.jeecg.modules.airag.pipeline.service.PublishedPipelineProvider;
 import org.jeecg.modules.airag.pipeline.validation.PipelineErrorCode;
@@ -32,25 +36,35 @@ public class PublishedPipelineProviderImpl implements PublishedPipelineProvider,
     private final PipelinePermissionService permissionService;
     private final PipelineDefinitionCodec codec;
     private final TriggerKeyNormalizer triggerNormalizer;
+    private final AuthorizedAgentConfigProvider agentProvider;
+    private final AuthorizedPipelineBotResolver botResolver;
 
     public PublishedPipelineProviderImpl(AiPipelineMapper pipelineMapper, AiPipelineVersionMapper versionMapper,
                                          AiPipelineTriggerKeyMapper triggerMapper,
                                          PipelinePermissionService permissionService,
                                          PipelineDefinitionCodec codec,
-                                         TriggerKeyNormalizer triggerNormalizer) {
+                                         TriggerKeyNormalizer triggerNormalizer,
+                                         AuthorizedAgentConfigProvider agentProvider,
+                                         AuthorizedPipelineBotResolver botResolver) {
         this.pipelineMapper = pipelineMapper;
         this.versionMapper = versionMapper;
         this.triggerMapper = triggerMapper;
         this.permissionService = permissionService;
         this.codec = codec;
         this.triggerNormalizer = triggerNormalizer;
+        this.agentProvider = agentProvider;
+        this.botResolver = botResolver;
     }
 
     @Override
-    public PublishedPipelineSnapshot getByVersionId(String versionId) {
+    public PublishedPipelineSnapshot getAuthorizedVersionById(String versionId, AgentAccessContext context) {
         AiPipelineVersion version = versionMapper.selectById(versionId);
-        if (version == null) throw PipelineException.of(PipelineErrorCode.PIPELINE_VERSION_NOT_FOUND,
+        if (version == null || context == null || !context.tenantId().equals(version.getTenantId())) {
+            throw PipelineException.of(PipelineErrorCode.PIPELINE_VERSION_NOT_FOUND,
                 "Published pipeline version was not found", versionId);
+        }
+        // A version ID is not an authorization boundary; visibility belongs to its owning pipeline.
+        permissionService.requireVisible(version.getPipelineId(), context);
         return snapshot(version);
     }
 
@@ -61,7 +75,9 @@ public class PublishedPipelineProviderImpl implements PublishedPipelineProvider,
                 "Pipeline is disabled", pipelineId);
         if (pipeline.getLatestVersionId() == null) throw PipelineException.of(PipelineErrorCode.PIPELINE_NOT_PUBLISHED,
                 "Pipeline has no published version", pipelineId);
-        return getByVersionId(pipeline.getLatestVersionId());
+        PublishedPipelineSnapshot snapshot = getAuthorizedVersionById(pipeline.getLatestVersionId(), context);
+        validateCurrentDependencies(snapshot, context);
+        return snapshot;
     }
 
     @Override
@@ -96,7 +112,19 @@ public class PublishedPipelineProviderImpl implements PublishedPipelineProvider,
             throw PipelineException.of(PipelineErrorCode.PIPELINE_NOT_FOUND_OR_FORBIDDEN,
                     "Pipeline trigger is not available for this bot", normalized);
         }
-        return getByVersionId(key.getPublishedVersionId());
+        PublishedPipelineSnapshot snapshot = getAuthorizedVersionById(key.getPublishedVersionId(), context);
+        validateCurrentDependencies(snapshot, context);
+        return snapshot;
+    }
+
+    private void validateCurrentDependencies(PublishedPipelineSnapshot snapshot, AgentAccessContext context) {
+        // Published snapshots are immutable history, so current availability must be checked separately before a run.
+        snapshot.getDefinition().getNodes().stream()
+                .filter(node -> node != null && node.getType() == PipelineEnums.NodeType.AGENT)
+                .map(node -> codec.parseNodeConfig(node, AgentNodeConfig.class))
+                .forEach(config -> agentProvider.resolveEnabledSnapshot(config.getAgentId(), context));
+        String botId = snapshot.getDefinition().getPipeline().getNotificationBotId();
+        botResolver.resolveAvailable(botId, context);
     }
 
     private PublishedPipelineSnapshot snapshot(AiPipelineVersion version) {

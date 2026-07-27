@@ -1,0 +1,32 @@
+package org.jeecg.modules.airag.execution.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.*;
+import org.jeecg.common.system.query.QueryGenerator;
+import org.jeecg.modules.airag.agent.service.AgentAccessContext;
+import org.jeecg.modules.airag.execution.contract.ExecutionEnums.*;
+import org.jeecg.modules.airag.execution.dto.ExecutionDtos.*;
+import org.jeecg.modules.airag.execution.entity.*;
+import org.jeecg.modules.airag.execution.mapper.*;
+import org.springframework.stereotype.Service;
+import java.util.*;
+
+@Service
+public class RunQueryService {
+    private final AiRunMapper runMapper;private final AiNodeRunMapper nodeMapper;private final AiRunEventMapper eventMapper;private final AiArtifactMapper artifactMapper;private final AiRunInterventionMapper interventionMapper;private final ObjectMapper mapper;
+    public RunQueryService(AiRunMapper runMapper,AiNodeRunMapper nodeMapper,AiRunEventMapper eventMapper,AiArtifactMapper artifactMapper,AiRunInterventionMapper interventionMapper,ObjectMapper mapper){this.runMapper=runMapper;this.nodeMapper=nodeMapper;this.eventMapper=eventMapper;this.artifactMapper=artifactMapper;this.interventionMapper=interventionMapper;this.mapper=mapper;}
+    public IPage<RunListItem> page(String status,String runType,String pipelineId,Date from,Date to,int pageNo,int pageSize,AgentAccessContext context){QueryWrapper<AiRun> q=new QueryWrapper<>();q.lambda().eq(AiRun::getTenantId,context.tenantId()).eq(AiRun::getDelFlag,0).eq(status!=null,AiRun::getStatus,status).eq(runType!=null,AiRun::getRunType,runType).eq(pipelineId!=null,AiRun::getPipelineId,pipelineId).ge(from!=null,AiRun::getCreateTime,from).le(to!=null,AiRun::getCreateTime,to).orderByDesc(AiRun::getCreateTime);QueryGenerator.installAuthMplus(q,AiRun.class);IPage<AiRun> raw=runMapper.selectPage(new Page<>(pageNo,pageSize),q);Page<RunListItem> result=new Page<>(pageNo,pageSize,raw.getTotal());result.setRecords(raw.getRecords().stream().map(this::listItem).toList());return result;}
+    public RunDetail detail(String id,AgentAccessContext context){AiRun run=require(id,context);List<NodeView> nodes=nodeMapper.selectList(new QueryWrapper<AiNodeRun>().lambda().eq(AiNodeRun::getRunId,id).eq(AiNodeRun::getTenantId,context.tenantId()).orderByAsc(AiNodeRun::getId)).stream().map(this::node).toList();return new RunDetail(run.getId(),RunType.valueOf(run.getRunType()),RunSource.valueOf(run.getSource()),RunStatus.valueOf(run.getStatus()),run.getPipelineId(),run.getPipelineVersion(),read(run.getInputJson()),nodes,run.getCreateTime(),run.getStartedAt(),run.getEndedAt());}
+    public List<EventView> events(String id,AgentAccessContext context){require(id,context);return eventMapper.selectList(new QueryWrapper<AiRunEvent>().lambda().eq(AiRunEvent::getRunId,id).eq(AiRunEvent::getTenantId,context.tenantId()).orderByAsc(AiRunEvent::getSequence).last("LIMIT 500")).stream().map(e->new EventView(e.getSequence(),e.getEventType(),e.getNodeRunId(),e.getFromStatus(),e.getToStatus(),e.getSummary(),e.getErrorCode(),e.getTraceId(),e.getCreateTime())).toList();}
+    public List<ArtifactView> artifacts(String id,AgentAccessContext context){require(id,context);return artifactMapper.selectList(new QueryWrapper<AiArtifact>().lambda().eq(AiArtifact::getRunId,id).eq(AiArtifact::getTenantId,context.tenantId()).orderByAsc(AiArtifact::getCreateTime)).stream().map(this::artifact).toList();}
+    public InterventionView openIntervention(String id,AgentAccessContext context){require(id,context);AiRunIntervention i=interventionMapper.selectOne(new QueryWrapper<AiRunIntervention>().lambda().eq(AiRunIntervention::getRunId,id).eq(AiRunIntervention::getTenantId,context.tenantId()).eq(AiRunIntervention::getStatus,InterventionStatus.OPEN.name()));if(i==null)return null;return new InterventionView(i.getId(),i.getNodeRunId(),InterventionType.valueOf(i.getInterventionType()),i.getPrompt(),actions(i.getAllowedActionsJson()),i.getResumeToken(),i.getCreateTime());}
+    public RunSummary summary(String id,AgentAccessContext context){AiRun run=require(id,context);List<AiNodeRun> nodes=nodeMapper.selectList(new QueryWrapper<AiNodeRun>().lambda().eq(AiNodeRun::getRunId,id).eq(AiNodeRun::getTenantId,context.tenantId()));List<StageSummary> stages=nodes.stream().map(n->new StageSummary(n.getNodeId(),n.getStageCode(),NodeStatus.valueOf(n.getStatus()),n.getResultSummary())).toList();AiNodeRun end=nodes.stream().filter(n->"END".equals(n.getNodeType())&&NodeStatus.SUCCESS.name().equals(n.getStatus())).findFirst().orElse(null);return new RunSummary(id,RunStatus.valueOf(run.getStatus()),stages,artifacts(id,context),end==null?null:read(end.getOutputJson()),end==null?null:end.getResultSummary(),!Set.of("SUCCESS","FAILED","CANCELED").contains(run.getStatus()));}
+    private AiRun require(String id,AgentAccessContext context){QueryWrapper<AiRun> q=new QueryWrapper<>();q.lambda().eq(AiRun::getId,id).eq(AiRun::getTenantId,context.tenantId()).eq(AiRun::getDelFlag,0);QueryGenerator.installAuthMplus(q,AiRun.class);AiRun run=runMapper.selectOne(q);if(run==null)throw ExecutionException.of(ExecutionErrorCode.RUN_NOT_FOUND_OR_FORBIDDEN,"Run was not found or forbidden");return run;}
+    private RunListItem listItem(AiRun r){return new RunListItem(r.getId(),RunType.valueOf(r.getRunType()),RunSource.valueOf(r.getSource()),RunStatus.valueOf(r.getStatus()),r.getPipelineId(),r.getInitiatorUsername(),r.getCreateTime(),r.getEndedAt());}
+    private NodeView node(AiNodeRun n){return new NodeView(n.getId(),n.getNodeId(),n.getStageCode(),n.getNodeType(),NodeStatus.valueOf(n.getStatus()),n.getAttemptNo(),n.getRetryCount(),n.getResultSummary(),n.getErrorCode(),n.getErrorMessage());}
+    private ArtifactView artifact(AiArtifact a){return new ArtifactView(a.getId(),a.getNodeRunId(),a.getArtifactType(),a.getName(),a.getUri(),read(a.getContentJson()),a.getChecksum(),a.getArtifactVersion(),read(a.getMetadataJson()),a.getSizeBytes(),a.getCreateTime());}
+    private JsonNode read(String json){try{return json==null?null:mapper.readTree(json);}catch(Exception e){return null;}}
+    private List<InterventionAction> actions(String json){try{return mapper.readValue(json,mapper.getTypeFactory().constructCollectionType(List.class,InterventionAction.class));}catch(Exception e){return List.of();}}
+}

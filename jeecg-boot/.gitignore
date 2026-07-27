@@ -13,3 +13,4 @@ os_del.cmd
 os_del_doc.cmd
 .svn
 derby.log
+/jeecg-boot-module/jeecg-boot-module-airag/src/test/

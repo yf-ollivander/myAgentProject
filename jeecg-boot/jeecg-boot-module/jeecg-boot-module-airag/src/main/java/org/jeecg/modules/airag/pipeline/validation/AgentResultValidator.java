@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.pipeline.validation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.jeecg.modules.airag.pipeline.contract.AgentResultContract;
 import org.jeecg.modules.airag.pipeline.contract.ArtifactDescriptor;
 import org.jeecg.modules.airag.pipeline.contract.PipelineEnums;
@@ -10,10 +11,15 @@ import org.springframework.util.StringUtils;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Component
 public class AgentResultValidator {
+    private static final Set<String> SENSITIVE_METADATA_KEYS = Set.of(
+            "secret", "token", "authorization", "password", "credential", "key");
     private final ObjectMapper mapper = new ObjectMapper();
 
     public List<String> validate(AgentResultContract result) {
@@ -21,6 +27,8 @@ public class AgentResultValidator {
         if (result == null || !"1.1".equals(result.getContractVersion()) || result.getStatus() == null) {
             return List.of("contractVersion 1.1 and status are required");
         }
+        if (result.getNeedsUser() == null) errors.add("needsUser is required");
+        if (result.getRetryable() == null) errors.add("retryable is required");
         boolean needsInput = result.getStatus() == PipelineEnums.AgentResultStatus.NEEDS_INPUT;
         if (!Boolean.valueOf(needsInput).equals(result.getNeedsUser())) errors.add("needsUser must match status");
         if (needsInput && !StringUtils.hasText(result.getUserPrompt())) errors.add("NEEDS_INPUT requires userPrompt");
@@ -52,6 +60,9 @@ public class AgentResultValidator {
             return;
         }
         if (artifact.getName().length() > 200) errors.add("artifact name exceeds 200 characters");
+        if (!StringUtils.hasText(artifact.getVersion()) || artifact.getVersion().length() > 64) {
+            errors.add("artifact version is required and limited to 64 characters");
+        }
         if (artifact.getUri() != null && artifact.getUri().length() > 2000) errors.add("artifact URI exceeds 2000 characters");
         boolean inline = artifact.getType() == PipelineEnums.ArtifactType.TEXT
                 || artifact.getType() == PipelineEnums.ArtifactType.JSON;
@@ -79,5 +90,22 @@ public class AgentResultValidator {
                 && mapper.valueToTree(artifact.getMetadata()).toString().getBytes(StandardCharsets.UTF_8).length > 16 * 1024) {
             errors.add("artifact metadata exceeds 16 KiB");
         }
+        if (containsSensitiveKey(artifact.getMetadata())) errors.add("artifact metadata contains a sensitive field");
+    }
+
+    private boolean containsSensitiveKey(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = String.valueOf(entry.getKey()).toLowerCase(Locale.ROOT);
+                if (SENSITIVE_METADATA_KEYS.stream().anyMatch(key::contains) || containsSensitiveKey(entry.getValue())) {
+                    return true;
+                }
+            }
+        } else if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) if (containsSensitiveKey(item)) return true;
+        } else if (value instanceof JsonNode node && node.isContainerNode()) {
+            return containsSensitiveKey(mapper.convertValue(node, Object.class));
+        }
+        return false;
     }
 }

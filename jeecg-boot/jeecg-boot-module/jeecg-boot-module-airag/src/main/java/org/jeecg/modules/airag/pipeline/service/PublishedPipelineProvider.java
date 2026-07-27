@@ -4,7 +4,7 @@ import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.pipeline.contract.PublishedPipelineSnapshot;
 
 public interface PublishedPipelineProvider {
-    PublishedPipelineSnapshot getByVersionId(String versionId);
+    PublishedPipelineSnapshot getAuthorizedVersionById(String versionId, AgentAccessContext context);
 
     PublishedPipelineSnapshot resolveEnabledForRun(String pipelineId, AgentAccessContext context);
 }

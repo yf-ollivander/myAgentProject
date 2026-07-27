@@ -374,6 +374,26 @@ jeecg:
 #cas单点登录
 cas:
   prefixUrl: http://cas.example.org:8443/cas
+
+ai:
+  executor:
+    enabled: true
+    gateway: mock
+    core-pool-size: 2
+    max-pool-size: 5
+    queue-capacity: 100
+    task-stream: ai:pipeline:tasks
+    task-group: jeecg-agent-executor
+    notification-stream: ai:pipeline:notifications
+    outbox-interval-ms: 1000
+    outbox-batch-size: 100
+    outbox-claim-seconds: 30
+    pending-scan-seconds: 30
+    pending-idle-seconds: 60
+    pending-claim-batch-size: 20
+    lease-scan-seconds: 30
+    dependency-scan-seconds: 30
+    max-dispatch-recoveries: 5
 #Mybatis输出sql日志
 logging:
   level:

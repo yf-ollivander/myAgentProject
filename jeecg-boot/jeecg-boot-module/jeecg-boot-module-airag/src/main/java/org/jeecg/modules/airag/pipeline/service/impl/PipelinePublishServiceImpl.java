@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.agent.service.AuthorizedAgentConfigProvider;
+import org.jeecg.modules.airag.agent.support.AgentConfigSnapshotSanitizer;
 import org.jeecg.modules.airag.pipeline.contract.*;
 import org.jeecg.modules.airag.pipeline.dto.PipelineDtos;
 import org.jeecg.modules.airag.pipeline.entity.AiPipeline;
@@ -19,9 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Date;
 
 @Service
@@ -37,6 +35,7 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
     private final TriggerKeyNormalizer triggerNormalizer;
     private final AuthorizedAgentConfigProvider agentProvider;
     private final AuthorizedPipelineBotResolver botResolver;
+    private final AgentConfigSnapshotSanitizer snapshotSanitizer;
 
     public PipelinePublishServiceImpl(AiPipelineMapper pipelineMapper, AiPipelineVersionMapper versionMapper,
                                       AiPipelineTriggerKeyMapper triggerMapper,
@@ -44,7 +43,8 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
                                       PipelineNodeConfigParser nodeParser, PipelineDefinitionValidator validator,
                                       PipelineDefinitionNormalizer normalizer, TriggerKeyNormalizer triggerNormalizer,
                                       AuthorizedAgentConfigProvider agentProvider,
-                                      AuthorizedPipelineBotResolver botResolver) {
+                                      AuthorizedPipelineBotResolver botResolver,
+                                      AgentConfigSnapshotSanitizer snapshotSanitizer) {
         this.pipelineMapper = pipelineMapper;
         this.versionMapper = versionMapper;
         this.triggerMapper = triggerMapper;
@@ -56,6 +56,7 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
         this.triggerNormalizer = triggerNormalizer;
         this.agentProvider = agentProvider;
         this.botResolver = botResolver;
+        this.snapshotSanitizer = snapshotSanitizer;
     }
 
     @Override
@@ -85,7 +86,7 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
         for (PipelineNode node : published.getNodes()) {
             if (node.getType() != PipelineEnums.NodeType.AGENT) continue;
             AgentNodeConfig config = nodeParser.parse(node, AgentNodeConfig.class);
-            AgentConfigSnapshot snapshot = safeSnapshot(resolveAgentSnapshot(config.getAgentId(), context));
+            AgentConfigSnapshot snapshot = snapshotSanitizer.sanitize(resolveAgentSnapshot(config.getAgentId(), context));
             config.setAgentSnapshot(snapshot);
             node.setConfig(codec.valueToTree(config));
         }
@@ -150,30 +151,6 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
         key.setCreateBy(username);
         key.setCreateTime(new Date());
         triggerMapper.insert(key);
-    }
-
-    private AgentConfigSnapshot safeSnapshot(AgentConfigSnapshot source) {
-        AgentConfigSnapshot.ConnectorSnapshot connector = source.getConnector();
-        Map<String, String> headers = new LinkedHashMap<>();
-        if (connector != null && connector.getRequestHeaders() != null) {
-            connector.getRequestHeaders().forEach((name, value) -> {
-                String normalized = name.toLowerCase(Locale.ROOT);
-                if (!normalized.equals("authorization") && !normalized.equals("proxy-authorization")
-                        && !normalized.equals("x-api-key") && !normalized.contains("secret")) {
-                    headers.put(name, value);
-                }
-            });
-        }
-        AgentConfigSnapshot.ConnectorSnapshot safeConnector = connector == null ? null
-                : AgentConfigSnapshot.ConnectorSnapshot.builder()
-                .connectorId(connector.getConnectorId()).connectorCode(connector.getConnectorCode())
-                .baseUrl(connector.getBaseUrl()).path(connector.getPath()).authType(connector.getAuthType())
-                .authHeader(connector.getAuthHeader()).requestHeaders(headers)
-                .responseMapping(connector.getResponseMapping()).connectTimeout(connector.getConnectTimeout())
-                .readTimeout(connector.getReadTimeout()).secretConfigured(connector.isSecretConfigured()).build();
-        return AgentConfigSnapshot.builder().agentId(source.getAgentId()).agentCode(source.getAgentCode())
-                .name(source.getName()).systemPrompt(source.getSystemPrompt()).timeoutSeconds(source.getTimeoutSeconds())
-                .maxRetry(source.getMaxRetry()).connector(safeConnector).feishuBot(source.getFeishuBot()).build();
     }
 
     private AgentConfigSnapshot resolveAgentSnapshot(String agentId, AgentAccessContext context) {
