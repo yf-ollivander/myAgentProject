@@ -77,7 +77,11 @@ public class RunCreationService implements RunStartService {
     public RunCreateResult startDirectAgent(RunCreateRequest request, AgentAccessContext context, RunSourceContext source) {
         validateCommon(request,RunType.AGENT_DIRECT);
         AgentConfigSnapshot agent=agentProvider.resolveEnabledSnapshot(request.getAgentId(),context);
-        AiFeishuBot bot=requireDirectBot(agent,context,source);
+        if (agent.getConnector() == null || !"1.1".equals(agent.getConnector().getResultContractVersion())) {
+            throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,
+                    "Agent Connector must use Result 1.1");
+        }
+        AiFeishuBot bot=requireNotificationBot(agent,context,source);
         // Direct runs persist their generated definition, so they must use the same secret-free snapshot as publication.
         PipelineDefinition definition=directDefinition(snapshotSanitizer.sanitize(agent),bot);
         PipelineDefinitionNormalizer.NormalizedDefinition normalized=normalizer.normalize(definition);
@@ -171,11 +175,27 @@ public class RunCreationService implements RunStartService {
         for(FieldSchema field:config.getInputSchema()){JsonNode value=input==null?null:input.get(field.effectiveName());if(Boolean.TRUE.equals(field.getRequired())&&value==null)throw ExecutionException.of(ExecutionErrorCode.RUN_INVALID_REQUEST,"Required input is missing: "+field.effectiveName());if(value!=null&&!matchesType(value,field.getType()))throw ExecutionException.of(ExecutionErrorCode.RUN_INVALID_REQUEST,"Input type is invalid: "+field.effectiveName());}
     }
 
-    private AiFeishuBot requireDirectBot(AgentConfigSnapshot agent,AgentAccessContext context,RunSourceContext source){
-        if(agent.getFeishuBot()==null)throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Direct Agent bot is required");
-        QueryWrapper<AiFeishuBot> botQuery=new QueryWrapper<>();botQuery.lambda().eq(AiFeishuBot::getId,agent.getFeishuBot().getBotId()).eq(AiFeishuBot::getEnabled,true).eq(AiFeishuBot::getEntryMode,"DIRECT_AGENT").eq(AiFeishuBot::getDelFlag,0).and("0".equals(context.tenantId()),q->q.eq(AiFeishuBot::getTenantId,"0").or().isNull(AiFeishuBot::getTenantId)).eq(!"0".equals(context.tenantId()),AiFeishuBot::getTenantId,context.tenantId());AiFeishuBot bot=botMapper.selectOne(botQuery);
-        if(bot==null||(source.source()==RunSource.JEECG&&!StringUtils.hasText(bot.getDefaultChatId()))) throw ExecutionException.of(
-                ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Enabled DIRECT_AGENT bot and default chat are required");
+    private AiFeishuBot requireNotificationBot(AgentConfigSnapshot agent,AgentAccessContext context,RunSourceContext source){
+        String botId = source.source() == RunSource.FEISHU ? source.botId()
+                : agent.getFeishuBot() == null ? null : agent.getFeishuBot().getBotId();
+        if(!StringUtils.hasText(botId))throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Notification bot is required");
+        QueryWrapper<AiFeishuBot> botQuery=new QueryWrapper<>();botQuery.lambda().eq(AiFeishuBot::getId,botId)
+                .eq(AiFeishuBot::getEnabled,true).eq(AiFeishuBot::getDelFlag,0)
+                .and("0".equals(context.tenantId()),q->q.eq(AiFeishuBot::getTenantId,"0")
+                        .or().isNull(AiFeishuBot::getTenantId).or().eq(AiFeishuBot::getTenantId,""))
+                .eq(!"0".equals(context.tenantId()),AiFeishuBot::getTenantId,context.tenantId());
+        AiFeishuBot bot=botMapper.selectOne(botQuery);
+        if(bot==null)throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Enabled notification bot is required");
+        if(source.source()==RunSource.JEECG){
+            if(!"DIRECT_AGENT".equals(bot.getEntryMode())||!StringUtils.hasText(bot.getDefaultChatId()))
+                throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Enabled DIRECT_AGENT bot and default chat are required");
+        }else if("DIRECT_AGENT".equals(bot.getEntryMode())){
+            // A direct bot remains bound to exactly one Agent; only an orchestrator may launch an unbound role.
+            if(agent.getFeishuBot()==null||!botId.equals(agent.getFeishuBot().getBotId()))
+                throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Source bot is not bound to the Agent");
+        }else if(!"ORCHESTRATOR".equals(bot.getEntryMode())){
+            throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,"Unsupported bot entry mode");
+        }
         return bot;
     }
 

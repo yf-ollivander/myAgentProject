@@ -35,6 +35,7 @@
     { title: '代码', dataIndex: 'connectorCode', width: 160 },
     { title: 'Endpoint', dataIndex: 'baseUrl', width: 280, customRender: ({ record }) => `${record.baseUrl}${record.path}` },
     { title: '鉴权', dataIndex: 'authType', width: 100 },
+    { title: '结果协议', dataIndex: 'resultContractVersion', width: 110 },
     { title: '凭据', dataIndex: 'secretConfigured', width: 90, customRender: ({ text, record }) => record.authType === 'NONE' ? '-' : (text ? '已配置' : '未配置') },
     { title: '状态', dataIndex: 'enabled', width: 90, customRender: ({ text }) => (text ? '启用' : '禁用') },
     { title: '最近测试', dataIndex: 'lastTestStatus', width: 110 },

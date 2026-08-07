@@ -11,3 +11,9 @@ export const enableFeishuBot = (id: string) => defHttp.post({ url: `${base}/${id
 export const disableFeishuBot = (id: string) => defHttp.post({ url: `${base}/${id}/disable` });
 export const testFeishuBot = (id: string, testMessage: string) =>
   defHttp.post({ url: `${base}/${id}/test`, data: { testMessage } });
+
+const bindingBase = '/api/ai/feishu-bindings';
+export const listFeishuBindings = (params) => defHttp.get({ url: bindingBase, params });
+export const createFeishuBinding = (data) => defHttp.post({ url: bindingBase, data });
+export const disableFeishuBinding = (id: string) => defHttp.post({ url: `${bindingBase}/${id}/disable` });
+export const createSelfBindingToken = (botId: string) => defHttp.post({ url: `${bindingBase}/token`, data: { botId } });

@@ -18,6 +18,7 @@ public class AiConnector extends AbstractAiConfigEntity {
     private String authHeader;
     private String requestHeaders;
     private String responseMapping;
+    private String resultContractVersion;
     private String secretCipher;
     private Integer connectTimeout;
     private Integer readTimeout;

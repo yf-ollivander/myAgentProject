@@ -155,7 +155,12 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
 
     private AgentConfigSnapshot resolveAgentSnapshot(String agentId, AgentAccessContext context) {
         try {
-            return agentProvider.resolveEnabledSnapshot(agentId, context);
+            AgentConfigSnapshot snapshot = agentProvider.resolveEnabledSnapshot(agentId, context);
+            if (snapshot.getConnector() == null || !"1.1".equals(snapshot.getConnector().getResultContractVersion())) {
+                throw PipelineException.of(PipelineErrorCode.PIPELINE_AGENT_NOT_AVAILABLE,
+                        "Agent Connector must use Result 1.1", agentId);
+            }
+            return snapshot;
         } catch (RuntimeException exception) {
             String message = exception.getMessage();
             if (message != null && (message.contains("not authorized") || message.contains("Authorized JEECG user"))) {

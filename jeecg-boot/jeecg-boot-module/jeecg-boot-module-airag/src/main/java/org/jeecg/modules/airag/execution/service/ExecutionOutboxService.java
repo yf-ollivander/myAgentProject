@@ -22,10 +22,17 @@ public class ExecutionOutboxService {
     }
 
     public AiOutbox notification(AiRun run, AiNodeRun node, String traceId, String message) {
-        AiOutbox outbox = base(run,node,traceId,new Date(),OutboxDestination.NOTIFICATION,"NOTIFICATION");
+        return businessNotification(run, node, "NODE_NOTIFY", traceId, null);
+    }
+
+    public AiOutbox businessNotification(AiRun run, AiNodeRun node, String eventType,
+                                         String traceId, String interventionId) {
+        AiOutbox outbox = base(run,node,traceId,new Date(),OutboxDestination.NOTIFICATION,eventType);
         ObjectNode payload=objectMapper.createObjectNode(); payload.put("eventId",outbox.getEventId()); payload.put("runId",run.getId());
-        payload.put("nodeRunId",node.getId()); payload.put("dispatchVersion",node.getDispatchVersion()); payload.put("traceId",traceId);
-        payload.put("message", message); outbox.setPayloadJson(payload.toString()); mapper.insert(outbox); return outbox;
+        if(node!=null)payload.put("nodeRunId",node.getId());payload.put("tenantId",run.getTenantId());payload.put("traceId",traceId);
+        payload.put("eventType",eventType);payload.put("eventSequence",run.getEventSequence()==null?0:run.getEventSequence());
+        if(interventionId!=null)payload.put("interventionId",interventionId);
+        outbox.setPayloadJson(payload.toString()); mapper.insert(outbox); return outbox;
     }
 
     private AiOutbox base(AiRun run,AiNodeRun node,String traceId,Date dueAt,OutboxDestination destination,String eventType){AiOutbox outbox=new AiOutbox();outbox.setTenantId(run.getTenantId());outbox.setEventId(UUID.randomUUID().toString());outbox.setDestination(destination.name());outbox.setEventType(eventType);outbox.setAggregateId(run.getId());outbox.setStatus(OutboxStatus.PENDING.name());outbox.setRetryCount(0);outbox.setNextRetryAt(dueAt==null?new Date():dueAt);outbox.setCreateTime(new Date());return outbox;

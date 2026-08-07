@@ -36,6 +36,7 @@ public class AgentConfigSnapshot implements Serializable {
         String authHeader;
         Map<String, String> requestHeaders;
         AiConfigDtos.ResponseMapping responseMapping;
+        String resultContractVersion;
         Integer connectTimeout;
         Integer readTimeout;
         boolean secretConfigured;

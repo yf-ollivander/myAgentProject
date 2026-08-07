@@ -10,8 +10,17 @@ import java.util.List;
 public interface AgentExecutionGateway {
     AgentResultContract execute(AgentExecutionRequest request);
 
-    record AgentExecutionRequest(String invocationId, String runId, String nodeRunId,
+    record AgentExecutionRequest(String invocationId, String runId, String tenantId, String nodeRunId,
                                  int attemptNo, int resumeGeneration, String traceId,
                                  AgentConfigSnapshot agentSnapshot, JsonNode input,
-                                 JsonNode resumeInput, List<ArtifactDescriptor> artifactInputs) {}
+                                 JsonNode resumeInput, List<ArtifactDescriptor> artifactInputs) {
+        public AgentExecutionRequest(String invocationId, String runId, String nodeRunId,
+                                     int attemptNo, int resumeGeneration, String traceId,
+                                     AgentConfigSnapshot agentSnapshot, JsonNode input,
+                                     JsonNode resumeInput, List<ArtifactDescriptor> artifactInputs) {
+            // Preserve the Module 03 constructor for existing tests and callers; new execution supplies tenant explicitly.
+            this(invocationId, runId, "0", nodeRunId, attemptNo, resumeGeneration, traceId,
+                    agentSnapshot, input, resumeInput, artifactInputs);
+        }
+    }
 }

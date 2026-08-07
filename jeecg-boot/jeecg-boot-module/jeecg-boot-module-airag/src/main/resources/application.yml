@@ -70,3 +70,24 @@ jeecg:
       user: "postgres"
       password: "123456"
       table: "embeddings"
+
+ai:
+  executor:
+    gateway: disabled
+    connector-max-request-bytes: 1048576
+    connector-max-response-bytes: 1048576
+  collaboration:
+    enabled: true
+    inbox-interval-ms: 500
+    inbox-batch-size: 50
+    inbox-claim-seconds: 30
+    inbox-max-retries: 10
+    binding-token-minutes: 10
+    notification-stream: ai:pipeline:notifications
+    notification-group: jeecg-feishu-notifier
+    notification-pending-idle-seconds: 60
+    notification-max-retries: 10
+    delivery-interval-ms: 500
+    delivery-batch-size: 50
+    delivery-claim-seconds: 30
+    run-detail-base-url: http://127.0.0.1:3100/multi-agent/runs

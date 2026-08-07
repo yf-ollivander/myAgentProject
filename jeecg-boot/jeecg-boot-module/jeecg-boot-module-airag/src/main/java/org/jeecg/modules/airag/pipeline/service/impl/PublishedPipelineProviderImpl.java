@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.pipeline.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.jeecg.common.config.TenantContext;
+import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.agent.service.AuthorizedAgentConfigProvider;
 import org.jeecg.modules.airag.pipeline.contract.AgentNodeConfig;
@@ -122,7 +123,14 @@ public class PublishedPipelineProviderImpl implements PublishedPipelineProvider,
         snapshot.getDefinition().getNodes().stream()
                 .filter(node -> node != null && node.getType() == PipelineEnums.NodeType.AGENT)
                 .map(node -> codec.parseNodeConfig(node, AgentNodeConfig.class))
-                .forEach(config -> agentProvider.resolveEnabledSnapshot(config.getAgentId(), context));
+                .forEach(config -> {
+                    AgentConfigSnapshot agentSnapshot = agentProvider.resolveEnabledSnapshot(config.getAgentId(), context);
+                    if (agentSnapshot.getConnector() == null
+                            || !"1.1".equals(agentSnapshot.getConnector().getResultContractVersion())) {
+                        throw PipelineException.of(PipelineErrorCode.PIPELINE_AGENT_NOT_AVAILABLE,
+                                "Pipeline Agent is not available", config.getAgentId());
+                    }
+                });
         String botId = snapshot.getDefinition().getPipeline().getNotificationBotId();
         botResolver.resolveAvailable(botId, context);
     }

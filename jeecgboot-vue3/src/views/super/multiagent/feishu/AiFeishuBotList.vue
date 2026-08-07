@@ -9,6 +9,7 @@
       </template>
     </BasicTable>
     <AiFeishuBotDrawer @register="registerDrawer" @success="reload" />
+    <FeishuBindingDrawer @register="registerBindingDrawer" />
     <a-modal v-model:open="testOpen" title="测试飞书机器人" :confirm-loading="testLoading" @ok="submitTest">
       <a-textarea v-model:value="testMessage" :rows="4" :maxlength="500" show-count />
     </a-modal>
@@ -22,10 +23,12 @@
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
   import AiFeishuBotDrawer from './components/AiFeishuBotDrawer.vue';
+  import FeishuBindingDrawer from './components/FeishuBindingDrawer.vue';
   import { deleteFeishuBot, disableFeishuBot, enableFeishuBot, listFeishuBots, testFeishuBot } from './feishu.api';
 
   const { createMessage } = useMessage();
   const [registerDrawer, { openDrawer }] = useDrawer();
+  const [registerBindingDrawer, { openDrawer: openBindingDrawer }] = useDrawer();
   const testOpen = ref(false);
   const testLoading = ref(false);
   const testMessage = ref('Multi-Agent 配置测试成功');
@@ -97,6 +100,7 @@
   function actions(record: any) { return [
     { label: '编辑', icon: 'ant-design:edit-outlined', auth: 'ai:feishu:edit', onClick: () => openEditor(record) },
     { label: '测试', icon: 'ant-design:send-outlined', auth: 'ai:feishu:test', onClick: () => openTest(record) },
+    { label: '用户绑定', icon: 'ant-design:team-outlined', auth: 'ai:feishu:binding:list', onClick: () => openBindingDrawer(true, { botId: record.id }) },
   ]; }
   function moreActions(record: any) { return [
     { label: record.enabled ? '禁用' : '启用', icon: record.enabled ? 'ant-design:pause-circle-outlined' : 'ant-design:play-circle-outlined', auth: record.enabled ? 'ai:feishu:disable' : 'ai:feishu:enable',

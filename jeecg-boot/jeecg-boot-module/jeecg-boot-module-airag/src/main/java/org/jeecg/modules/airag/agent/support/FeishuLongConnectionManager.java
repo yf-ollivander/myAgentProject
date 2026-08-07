@@ -2,6 +2,9 @@ package org.jeecg.modules.airag.agent.support;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lark.oapi.event.EventDispatcher;
+import com.lark.oapi.event.cardcallback.P2CardActionTriggerHandler;
+import com.lark.oapi.event.cardcallback.model.P2CardActionTrigger;
+import com.lark.oapi.event.cardcallback.model.P2CardActionTriggerResponse;
 import com.lark.oapi.service.im.ImService;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import com.lark.oapi.ws.Client;
@@ -11,6 +14,7 @@ import org.jeecg.modules.airag.agent.config.AiAgentProperties;
 import org.jeecg.modules.airag.agent.entity.AiFeishuBot;
 import org.jeecg.modules.airag.agent.mapper.AiFeishuBotMapper;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.stereotype.Component;
@@ -32,20 +36,31 @@ public class FeishuLongConnectionManager {
     private final AiFeishuBotMapper botMapper;
     private final SecretCipherService secretCipherService;
     private final FeishuMessageEventReceiver eventReceiver;
+    private final FeishuCardActionEventReceiver cardReceiver;
     private final AiAgentProperties properties;
     private final ExecutorService executor = Executors.newCachedThreadPool(
             new CustomizableThreadFactory("feishu-long-connection-"));
     private final Map<String, ConnectionHandle> connections = new ConcurrentHashMap<>();
     private final Map<String, String> statuses = new ConcurrentHashMap<>();
 
+    @Autowired
     public FeishuLongConnectionManager(AiFeishuBotMapper botMapper,
                                        SecretCipherService secretCipherService,
                                        FeishuMessageEventReceiver eventReceiver,
+                                       FeishuCardActionEventReceiver cardReceiver,
                                        AiAgentProperties properties) {
         this.botMapper = botMapper;
         this.secretCipherService = secretCipherService;
         this.eventReceiver = eventReceiver;
+        this.cardReceiver = cardReceiver;
         this.properties = properties;
+    }
+
+    public FeishuLongConnectionManager(AiFeishuBotMapper botMapper,
+                                       SecretCipherService secretCipherService,
+                                       FeishuMessageEventReceiver eventReceiver,
+                                       AiAgentProperties properties) {
+        this(botMapper, secretCipherService, eventReceiver, null, properties);
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -62,14 +77,20 @@ public class FeishuLongConnectionManager {
         stopInternal(bot.getId(), false);
         try {
             String appSecret = secretCipherService.decrypt(bot.getAppSecretCipher());
-            EventDispatcher dispatcher = EventDispatcher.newBuilder("", "")
+            EventDispatcher.Builder dispatcherBuilder = EventDispatcher.newBuilder("", "")
                     .onP2MessageReceiveV1(new ImService.P2MessageReceiveV1Handler() {
                         @Override
                         public void handle(P2MessageReceiveV1 event) {
                             eventReceiver.accept(bot, event);
                         }
-                    })
-                    .build();
+                    });
+            if (cardReceiver != null) dispatcherBuilder.onP2CardActionTrigger(new P2CardActionTriggerHandler() {
+                        @Override
+                        public P2CardActionTriggerResponse handle(P2CardActionTrigger event) {
+                            return cardReceiver.accept(bot, event);
+                        }
+                    });
+            EventDispatcher dispatcher = dispatcherBuilder.build();
             Client client = createClient(bot.getAppId(), appSecret, dispatcher);
             ConnectionHandle handle = new ConnectionHandle(client);
             connections.put(bot.getId(), handle);

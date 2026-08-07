@@ -164,16 +164,19 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
         entity.setAuthHeader("API_KEY".equals(request.getAuthType())
                 ? (StringUtils.hasText(request.getAuthHeader()) ? request.getAuthHeader().trim() : "X-API-Key") : null);
         validateHeaders(request.getRequestHeaders(), entity.getAuthHeader());
-        validateMapping(request.getResponseMapping());
+        boolean legacy = AiConfigDtos.CONTRACT_LEGACY.equals(request.getResultContractVersion());
+        if (legacy) validateMapping(request.getResponseMapping());
         try {
             entity.setRequestHeaders(objectMapper.writeValueAsString(
                     request.getRequestHeaders() == null ? new LinkedHashMap<>() : request.getRequestHeaders()));
-            entity.setResponseMapping(objectMapper.writeValueAsString(request.getResponseMapping()));
+            // Result 1.1 is parsed strictly and must never inherit legacy JSON-pointer mapping behavior.
+            entity.setResponseMapping(legacy ? objectMapper.writeValueAsString(request.getResponseMapping()) : null);
         } catch (Exception e) {
             throw new JeecgBootException("Connector headers or response mapping are invalid", e);
         }
         entity.setConnectTimeout(request.getConnectTimeout());
         entity.setReadTimeout(request.getReadTimeout());
+        entity.setResultContractVersion(request.getResultContractVersion());
         // Blank values retain the existing secret so normal edits cannot erase credentials accidentally.
         if (request.isClearSecret()) {
             entity.setSecretCipher(null);
@@ -259,9 +262,12 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
         view.setPath(entity.getPath());
         view.setAuthType(entity.getAuthType());
         view.setAuthHeader(entity.getAuthHeader());
+        view.setResultContractVersion(StringUtils.hasText(entity.getResultContractVersion())
+                ? entity.getResultContractVersion() : AiConfigDtos.CONTRACT_LEGACY);
         try {
             view.setRequestHeaders(objectMapper.readValue(entity.getRequestHeaders(), Map.class));
-            view.setResponseMapping(objectMapper.readValue(entity.getResponseMapping(), AiConfigDtos.ResponseMapping.class));
+            view.setResponseMapping(AiConfigDtos.CONTRACT_LEGACY.equals(view.getResultContractVersion())
+                    ? objectMapper.readValue(entity.getResponseMapping(), AiConfigDtos.ResponseMapping.class) : null);
         } catch (Exception e) {
             view.setRequestHeaders(new LinkedHashMap<>());
             view.setResponseMapping(new AiConfigDtos.ResponseMapping());

@@ -84,10 +84,16 @@ public class SecretCipherService {
             throw new JeecgBootException("AI_CONFIG_SECRET_KEY is not configured");
         }
         byte[] key;
-        try {
-            key = Base64.getDecoder().decode(configured.trim());
-        } catch (IllegalArgumentException ignored) {
-            key = configured.getBytes(StandardCharsets.UTF_8);
+        byte[] ascii = configured.getBytes(StandardCharsets.UTF_8);
+        if (ascii.length == 32) {
+            // A valid 32-byte ASCII key may itself contain only Base64 characters; honor the documented raw form first.
+            key = ascii;
+        } else {
+            try {
+                key = Base64.getDecoder().decode(configured.trim());
+            } catch (IllegalArgumentException ignored) {
+                key = ascii;
+            }
         }
         if (key.length != 32) {
             throw new JeecgBootException("AI_CONFIG_SECRET_KEY must be a Base64 encoded 32-byte key or 32 ASCII characters");

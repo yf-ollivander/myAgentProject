@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.support;
 
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
+import org.jeecg.modules.airag.agent.dto.AiConfigDtos;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -45,7 +46,11 @@ public class AgentConfigSnapshotSanitizer {
                 .connectorId(source.getConnectorId()).connectorCode(source.getConnectorCode())
                 .baseUrl(source.getBaseUrl()).path(source.getPath()).authType(source.getAuthType())
                 .authHeader(source.getAuthHeader()).requestHeaders(safeHeaders)
-                .responseMapping(source.getResponseMapping()).connectTimeout(source.getConnectTimeout())
+                // Result 1.1 is schema-driven; strip legacy pointers even from manually constructed snapshots.
+                .responseMapping(AiConfigDtos.CONTRACT_1_1.equals(source.getResultContractVersion())
+                        ? null : source.getResponseMapping())
+                .resultContractVersion(source.getResultContractVersion())
+                .connectTimeout(source.getConnectTimeout())
                 .readTimeout(source.getReadTimeout()).secretConfigured(source.isSecretConfigured()).build();
     }
 

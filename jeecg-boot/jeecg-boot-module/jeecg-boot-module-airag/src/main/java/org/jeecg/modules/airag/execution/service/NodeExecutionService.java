@@ -56,7 +56,7 @@ public class NodeExecutionService {
         JsonNode input=config.getInput()==null||config.getInput().isEmpty()?runInput:templates.resolve(codec.valueToTree(config.getInput()),runInput,outputs,summaries);
         List<ArtifactDescriptor> artifactInputs=selectArtifacts(run,config.getArtifactInputs());
         AgentExecutionGateway.AgentExecutionRequest request=new AgentExecutionGateway.AgentExecutionRequest(
-                run.getId()+":"+node.getNodeId()+":"+node.getAttemptNo()+":"+node.getResumeGeneration(),run.getId(),node.getId(),
+                run.getId()+":"+node.getNodeId()+":"+node.getAttemptNo()+":"+node.getResumeGeneration(),run.getId(),run.getTenantId(),node.getId(),
                 node.getAttemptNo(),node.getResumeGeneration(),traceId,config.getAgentSnapshot(),input,
                 node.getInputJson()==null?null:read(node.getInputJson()),artifactInputs);
         AgentResultContract result=gateway.execute(request);List<String> errors=resultValidator.validate(result);

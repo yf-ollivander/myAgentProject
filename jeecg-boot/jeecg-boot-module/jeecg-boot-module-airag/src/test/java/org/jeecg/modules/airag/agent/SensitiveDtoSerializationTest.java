@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.agent;
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.node.TextNode;
 import org.jeecg.modules.airag.agent.dto.AiConfigDtos;
+import org.jeecg.modules.airag.agent.support.FeishuInboundMessage;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,5 +31,10 @@ class SensitiveDtoSerializationTest {
         AiConfigDtos.FeishuTestInput feishu = new AiConfigDtos.FeishuTestInput();
         feishu.setTestMessage("private-test-message");
         assertFalse(JSONObject.toJSONString(feishu).contains("private-test-message"));
+
+        FeishuInboundMessage message = FeishuInboundMessage.builder()
+                .botKey("bot").messageId("message-id").content("private-command-body").build();
+        assertFalse(JSONObject.toJSONString(message).contains("private-command-body"));
+        assertFalse(message.toString().contains("private-command-body"));
     }
 }

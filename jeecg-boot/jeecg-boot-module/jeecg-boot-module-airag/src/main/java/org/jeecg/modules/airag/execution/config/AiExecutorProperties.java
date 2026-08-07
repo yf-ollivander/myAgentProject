@@ -23,4 +23,6 @@ public class AiExecutorProperties {
     private int leaseScanSeconds = 30;
     private int dependencyScanSeconds = 30;
     private int maxDispatchRecoveries = 5;
+    private int connectorMaxRequestBytes = 1048576;
+    private int connectorMaxResponseBytes = 1048576;
 }

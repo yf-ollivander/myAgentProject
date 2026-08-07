@@ -11,8 +11,9 @@ import java.util.Date;
 public class NodeClaimService {
     private final AiRunMapper runMapper; private final AiNodeRunMapper nodeMapper; private final RunEventService events;
     private final RunDependencyAvailabilityService dependencies;
+    private final ExecutionOutboxService outbox;
     public NodeClaimService(AiRunMapper runMapper,AiNodeRunMapper nodeMapper,RunEventService events,
-                            RunDependencyAvailabilityService dependencies){this.runMapper=runMapper;this.nodeMapper=nodeMapper;this.events=events;this.dependencies=dependencies;}
+                            RunDependencyAvailabilityService dependencies,ExecutionOutboxService outbox){this.runMapper=runMapper;this.nodeMapper=nodeMapper;this.events=events;this.dependencies=dependencies;this.outbox=outbox;}
 
     @Transactional(rollbackFor=Exception.class)
     public ClaimedNode claim(String tenantId,String runId,String nodeRunId,long dispatchVersion,String owner,String traceId,Date leaseUntil){
@@ -22,7 +23,8 @@ public class NodeClaimService {
         if(nodeMapper.claimPending(nodeRunId,tenantId,dispatchVersion,owner,leaseUntil)!=1)return null;
         AiNodeRun node=nodeMapper.selectByIdForUpdate(nodeRunId,tenantId);
         if(runStatus==RunStatus.CREATED||runStatus==RunStatus.WAITING){run.setStatus(RunStatus.RUNNING.name());if(run.getStartedAt()==null)run.setStartedAt(new Date());runMapper.updateById(run);
-            events.append(run,nodeRunId,"RUN_STARTED",runStatus.name(),RunStatus.RUNNING.name(),"Run execution started",null,traceId,null);}
+            events.append(run,nodeRunId,"RUN_STARTED",runStatus.name(),RunStatus.RUNNING.name(),"Run execution started",null,traceId,null);
+            if(runStatus==RunStatus.CREATED)outbox.businessNotification(run,node,"RUN_STARTED",traceId,null);}
         events.append(run,nodeRunId,"NODE_STARTED",NodeStatus.PENDING.name(),NodeStatus.RUNNING.name(),"Node started",null,traceId,null);
         return new ClaimedNode(tenantId,runId,nodeRunId,node.getNodeId(),owner,traceId);
     }

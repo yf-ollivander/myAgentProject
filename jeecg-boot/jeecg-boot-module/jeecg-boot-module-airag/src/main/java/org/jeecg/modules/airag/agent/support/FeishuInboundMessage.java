@@ -4,6 +4,7 @@ import com.alibaba.fastjson.annotation.JSONField;
 import lombok.Builder;
 import lombok.ToString;
 import lombok.Value;
+import java.util.List;
 
 @Value
 @Builder
@@ -17,8 +18,11 @@ public class FeishuInboundMessage {
     String threadId;
     String rootId;
     String parentId;
+    String chatType;
+    String senderType;
     String messageType;
     String senderOpenId;
+    List<String> mentionKeys;
     @JSONField(serialize = false)
     @ToString.Exclude
     String content;

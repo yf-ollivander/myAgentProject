@@ -42,6 +42,10 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
     private static final String AGENT_COMPONENT = "super/multiagent/agent/AiAgentList";
     private static final String AGENT_OPTIONS_PATH = "/api/ai/agents/options";
     private static final String AGENT_LIST_PERMISSION = "ai:agent:list";
+    private static final String FEISHU_COMPONENT = "super/multiagent/feishu/AiFeishuBotList";
+    private static final String FEISHU_OPTIONS_PATH = "/api/ai/feishu-bots";
+    private static final String CONNECTOR_COMPONENT = "super/multiagent/connector/AiConnectorList";
+    private static final String CONNECTOR_OPTIONS_PATH = "/api/ai/connectors";
 
     private final IAiConnectorService connectorService;
     private final IAiFeishuBotService feishuBotService;
@@ -123,7 +127,46 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
             if (agent == null) {
                 throw new JeecgBootException("Enabled Agent not found or is outside the authorized data scope");
             }
-            return buildSnapshot(agent);
+            return buildSnapshot(agent, accessContext, authorization);
+        });
+    }
+
+    @Override
+    public AgentConfigSnapshot resolveEnabledSnapshotByCode(String agentCode, AgentAccessContext accessContext) {
+        AuthorizationData authorization = loadAuthorization(accessContext);
+        return withTenant(accessContext.tenantId(), () -> {
+            QueryWrapper<AiAgent> query = new QueryWrapper<>();
+            query.lambda().eq(AiAgent::getAgentCode, agentCode).eq(AiAgent::getEnabled, true);
+            QueryGenerator.installAuthMplus(query, AiAgent.class, authorization.rules(),
+                    authorization.userInfo(), accessContext.tenantId());
+            AiAgent agent = getOne(query, false);
+            if (agent == null) throw new JeecgBootException("Enabled Agent not found or is outside the authorized data scope");
+            return buildSnapshot(agent, accessContext, authorization);
+        });
+    }
+
+    @Override
+    public AgentConfigSnapshot resolveEnabledSnapshotByBotId(String botId, AgentAccessContext accessContext) {
+        AuthorizationData authorization = loadAuthorization(accessContext);
+        return withTenant(accessContext.tenantId(), () -> {
+            QueryWrapper<AiFeishuBot> botQuery = new QueryWrapper<>();
+            botQuery.lambda().eq(AiFeishuBot::getId, botId).eq(AiFeishuBot::getEnabled, true)
+                    .eq(AiFeishuBot::getEntryMode, AiConfigDtos.DIRECT_AGENT)
+                    .eq(AiFeishuBot::getCommandEnabled, true).eq(AiFeishuBot::getDelFlag, 0);
+            List<SysPermissionDataRuleModel> botRules = commonApi.queryPermissionDataRule(
+                    FEISHU_COMPONENT, FEISHU_OPTIONS_PATH, accessContext.username());
+            QueryGenerator.installAuthMplus(botQuery, AiFeishuBot.class, botRules == null ? List.of() : botRules,
+                    authorization.userInfo(), accessContext.tenantId());
+            if (feishuBotMapper.selectOne(botQuery) == null) {
+                throw new JeecgBootException("Enabled Agent not found or is outside the authorized data scope");
+            }
+            QueryWrapper<AiAgent> agentQuery = new QueryWrapper<>();
+            agentQuery.lambda().eq(AiAgent::getFeishuBotId, botId).eq(AiAgent::getEnabled, true);
+            QueryGenerator.installAuthMplus(agentQuery, AiAgent.class, authorization.rules(),
+                    authorization.userInfo(), accessContext.tenantId());
+            AiAgent agent = getOne(agentQuery, false);
+            if (agent == null) throw new JeecgBootException("Enabled Agent not found or is outside the authorized data scope");
+            return buildSnapshot(agent, accessContext, authorization);
         });
     }
 
@@ -219,22 +262,44 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
         return result;
     }
 
-    private AgentConfigSnapshot buildSnapshot(AiAgent agent) {
-        AiConnector connector = connectorService.getById(agent.getConnectorId());
-        if (connector == null || !Boolean.TRUE.equals(connector.getEnabled())) {
+    private AgentConfigSnapshot buildSnapshot(AiAgent agent, AgentAccessContext accessContext,
+                                              AuthorizationData authorization) {
+        QueryWrapper<AiConnector> connectorQuery = new QueryWrapper<>();
+        connectorQuery.lambda().eq(AiConnector::getId, agent.getConnectorId())
+                .eq(AiConnector::getEnabled, true).eq(AiConnector::getDelFlag, 0)
+                .and("0".equals(accessContext.tenantId()), q -> q.eq(AiConnector::getTenantId, "0")
+                        .or().isNull(AiConnector::getTenantId).or().eq(AiConnector::getTenantId, ""))
+                .eq(!"0".equals(accessContext.tenantId()), AiConnector::getTenantId, accessContext.tenantId());
+        List<SysPermissionDataRuleModel> connectorRules = commonApi.queryPermissionDataRule(
+                CONNECTOR_COMPONENT, CONNECTOR_OPTIONS_PATH, accessContext.username());
+        QueryGenerator.installAuthMplus(connectorQuery, AiConnector.class,
+                connectorRules == null ? List.of() : connectorRules, authorization.userInfo(), accessContext.tenantId());
+        AiConnector connector = connectorService.getOne(connectorQuery, false);
+        if (connector == null) {
             throw new JeecgBootException("Agent Connector is not enabled");
         }
         Map<String, String> requestHeaders;
         AiConfigDtos.ResponseMapping responseMapping;
         try {
             requestHeaders = objectMapper.readValue(connector.getRequestHeaders(), Map.class);
-            responseMapping = objectMapper.readValue(connector.getResponseMapping(), AiConfigDtos.ResponseMapping.class);
+            responseMapping = AiConfigDtos.CONTRACT_LEGACY.equals(connector.getResultContractVersion())
+                    ? objectMapper.readValue(connector.getResponseMapping(), AiConfigDtos.ResponseMapping.class) : null;
         } catch (Exception e) {
             throw new JeecgBootException("Connector snapshot configuration is invalid", e);
         }
         AgentConfigSnapshot.FeishuBotSnapshot botSnapshot = null;
         if (StringUtils.hasText(agent.getFeishuBotId())) {
-            AiFeishuBot bot = feishuBotService.getById(agent.getFeishuBotId());
+            QueryWrapper<AiFeishuBot> botQuery = new QueryWrapper<>();
+            botQuery.lambda().eq(AiFeishuBot::getId, agent.getFeishuBotId())
+                    .eq(AiFeishuBot::getEnabled, true).eq(AiFeishuBot::getDelFlag, 0)
+                    .and("0".equals(accessContext.tenantId()), q -> q.eq(AiFeishuBot::getTenantId, "0")
+                            .or().isNull(AiFeishuBot::getTenantId).or().eq(AiFeishuBot::getTenantId, ""))
+                    .eq(!"0".equals(accessContext.tenantId()), AiFeishuBot::getTenantId, accessContext.tenantId());
+            List<SysPermissionDataRuleModel> botRules = commonApi.queryPermissionDataRule(
+                    FEISHU_COMPONENT, FEISHU_OPTIONS_PATH, accessContext.username());
+            QueryGenerator.installAuthMplus(botQuery, AiFeishuBot.class, botRules == null ? List.of() : botRules,
+                    authorization.userInfo(), accessContext.tenantId());
+            AiFeishuBot bot = feishuBotMapper.selectOne(botQuery);
             if (bot != null) {
                 botSnapshot = AgentConfigSnapshot.FeishuBotSnapshot.builder()
                         .botId(bot.getId()).botKey(bot.getBotKey()).defaultChatId(bot.getDefaultChatId())
@@ -249,7 +314,9 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
                         .connectorId(connector.getId()).connectorCode(connector.getConnectorCode())
                         .baseUrl(connector.getBaseUrl()).path(connector.getPath()).authType(connector.getAuthType())
                         .authHeader(connector.getAuthHeader()).requestHeaders(requestHeaders)
-                        .responseMapping(responseMapping).connectTimeout(connector.getConnectTimeout())
+                        .responseMapping(responseMapping).resultContractVersion(StringUtils.hasText(connector.getResultContractVersion())
+                                ? connector.getResultContractVersion() : AiConfigDtos.CONTRACT_LEGACY)
+                        .connectTimeout(connector.getConnectTimeout())
                         .readTimeout(connector.getReadTimeout()).secretConfigured(StringUtils.hasText(connector.getSecretCipher())).build())
                 .feishuBot(botSnapshot).build();
     }

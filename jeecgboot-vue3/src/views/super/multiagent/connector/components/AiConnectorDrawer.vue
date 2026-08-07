@@ -61,8 +61,11 @@
       <a-form-item label="非敏感请求头（JSON 对象）" name="requestHeadersText">
         <a-textarea v-model:value="model.requestHeadersText" :rows="5" spellcheck="false" />
       </a-form-item>
-      <a-divider orientation="left">响应映射</a-divider>
-      <a-row :gutter="16">
+      <a-form-item label="结果协议" name="resultContractVersion">
+        <a-segmented v-model:value="model.resultContractVersion" block :options="contractOptions" />
+      </a-form-item>
+      <a-divider v-if="model.resultContractVersion === 'LEGACY'" orientation="left">响应映射</a-divider>
+      <a-row v-if="model.resultContractVersion === 'LEGACY'" :gutter="16">
         <a-col :xs="24" :md="8"><a-form-item label="成功字段" name="successPointer"><a-input v-model:value="model.successPointer" /></a-form-item></a-col>
         <a-col :xs="24" :md="8"><a-form-item label="输出字段" name="outputPointer"><a-input v-model:value="model.outputPointer" /></a-form-item></a-col>
         <a-col :xs="24" :md="8"><a-form-item label="摘要字段" name="summaryPointer"><a-input v-model:value="model.summaryPointer" /></a-form-item></a-col>
@@ -76,6 +79,7 @@
   import { BasicDrawer, useDrawerInner } from '/@/components/Drawer';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { createConnector, getConnector, updateConnector } from '../connector.api';
+  import { connectorResponseMapping } from '../connector.contract';
 
   const emit = defineEmits(['register', 'success']);
   const { createMessage } = useMessage();
@@ -89,6 +93,10 @@
     { label: 'Bearer Token', value: 'BEARER' },
     { label: 'API Key', value: 'API_KEY' },
   ];
+  const contractOptions = [
+    { label: 'LEGACY', value: 'LEGACY' },
+    { label: 'Result 1.1', value: '1.1' },
+  ];
   const rules = {
     connectorCode: [{ required: true, message: '请输入 Connector 代码' }, { pattern: /^[A-Za-z][A-Za-z0-9_-]*$/, message: '代码必须以字母开头' }],
     name: [{ required: true, message: '请输入名称' }],
@@ -97,6 +105,7 @@
     authType: [{ required: true }],
     connectTimeout: [{ required: true, type: 'number', min: 1, max: 300 }],
     readTimeout: [{ required: true, type: 'number', min: 1, max: 300 }],
+    resultContractVersion: [{ required: true }],
     successPointer: [{ required: true }], outputPointer: [{ required: true }], summaryPointer: [{ required: true }],
   };
   const title = computed(() => (isUpdate.value ? '编辑 HTTP Connector' : '新增 HTTP Connector'));
@@ -104,7 +113,7 @@
   const [registerDrawer, { setDrawerProps, closeDrawer }] = useDrawerInner(async (data) => {
     formRef.value?.resetFields();
     Object.keys(model).forEach((key) => delete model[key]);
-    Object.assign(model, { authType: 'NONE', authHeader: 'X-API-Key', connectTimeout: 10, readTimeout: 300,
+    Object.assign(model, { authType: 'NONE', authHeader: 'X-API-Key', connectTimeout: 10, readTimeout: 300, resultContractVersion: 'LEGACY',
       requestHeadersText: '{}', successPointer: '/success', outputPointer: '/output', summaryPointer: '/summary', clearSecret: false });
     isUpdate.value = !!data?.id;
     currentId.value = data?.id || '';
@@ -133,7 +142,9 @@
         connectorCode: model.connectorCode, name: model.name, baseUrl: model.baseUrl, path: model.path,
         authType: model.authType, authHeader: model.authHeader, secret: model.secret || null, clearSecret: !!model.clearSecret,
         connectTimeout: model.connectTimeout, readTimeout: model.readTimeout, requestHeaders,
-        responseMapping: { successPointer: model.successPointer, outputPointer: model.outputPointer, summaryPointer: model.summaryPointer },
+        resultContractVersion: model.resultContractVersion,
+        // Result 1.1 is schema-driven and must never persist legacy JSON pointers.
+        responseMapping: connectorResponseMapping(model),
       };
       if (isUpdate.value) await updateConnector(currentId.value, payload);
       else await createConnector(payload);

@@ -25,6 +25,8 @@ public final class AiConfigDtos {
     private static final String CODE_PATTERN = "^[A-Za-z][A-Za-z0-9_-]*$";
     public static final String DIRECT_AGENT = "DIRECT_AGENT";
     public static final String ORCHESTRATOR = "ORCHESTRATOR";
+    public static final String CONTRACT_LEGACY = "LEGACY";
+    public static final String CONTRACT_1_1 = "1.1";
 
     @Data
     public static class AgentUpsertRequest {
@@ -64,6 +66,8 @@ public final class AiConfigDtos {
         private Map<String, String> requestHeaders = new LinkedHashMap<>();
         @Valid
         private ResponseMapping responseMapping = new ResponseMapping();
+        @NotBlank @Pattern(regexp = "LEGACY|1\\.1")
+        private String resultContractVersion = CONTRACT_LEGACY;
         @JSONField(serialize = false)
         @ToString.Exclude
         @Size(max = 4000)
@@ -177,6 +181,7 @@ public final class AiConfigDtos {
         private String authHeader;
         private Map<String, String> requestHeaders;
         private ResponseMapping responseMapping;
+        private String resultContractVersion;
         private boolean secretConfigured;
         private Integer connectTimeout;
         private Integer readTimeout;
