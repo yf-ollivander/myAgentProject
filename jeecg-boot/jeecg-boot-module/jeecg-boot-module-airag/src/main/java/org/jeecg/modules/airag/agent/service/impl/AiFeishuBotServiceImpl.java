@@ -17,6 +17,7 @@ import org.jeecg.modules.airag.agent.service.IAiFeishuBotService;
 import org.jeecg.modules.airag.agent.support.FeishuBotClient;
 import org.jeecg.modules.airag.agent.support.FeishuLongConnectionManager;
 import org.jeecg.modules.airag.agent.support.SecretCipherService;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -29,11 +30,13 @@ public class AiFeishuBotServiceImpl extends ServiceImpl<AiFeishuBotMapper, AiFei
     private final FeishuBotClient feishuBotClient;
     private final AiAgentMapper agentMapper;
     private final AiAgentProperties properties;
+    // The long-connection manager depends on inbound command processing, which can resolve Agents.
+    // Keeping this edge lazy prevents the configuration services from forming a boot-time bean cycle.
     private final FeishuLongConnectionManager longConnectionManager;
 
     public AiFeishuBotServiceImpl(SecretCipherService secretCipherService, FeishuBotClient feishuBotClient,
                                   AiAgentMapper agentMapper, AiAgentProperties properties,
-                                  FeishuLongConnectionManager longConnectionManager) {
+                                  @Lazy FeishuLongConnectionManager longConnectionManager) {
         this.secretCipherService = secretCipherService;
         this.feishuBotClient = feishuBotClient;
         this.agentMapper = agentMapper;

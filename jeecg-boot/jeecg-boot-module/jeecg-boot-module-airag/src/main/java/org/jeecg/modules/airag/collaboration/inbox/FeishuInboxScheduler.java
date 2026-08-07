@@ -4,6 +4,7 @@ import org.jeecg.modules.airag.collaboration.config.CollaborationProperties;
 import org.jeecg.modules.airag.collaboration.contract.CollaborationEnums.InboundStatus;
 import org.jeecg.modules.airag.collaboration.entity.AiFeishuInboundEvent;
 import org.jeecg.modules.airag.collaboration.mapper.AiFeishuInboundEventMapper;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.util.*;
@@ -11,23 +12,30 @@ import java.util.*;
 @Component
 public class FeishuInboxScheduler {
     private static final int[] BACKOFF = {1, 2, 5, 10, 30};
+    private static final String CLAIM_CANDIDATES_SQL = "SELECT id FROM ai_feishu_inbound_event WHERE ((status IN ('PENDING','FAILED') AND next_retry_at<=NOW(3)) OR (status='PROCESSING' AND claimed_until<NOW(3))) ORDER BY create_time LIMIT ?";
     private final AiFeishuInboundEventMapper mapper;
     private final FeishuInboundEventProcessor processor;
     private final CollaborationProperties properties;
+    private final JdbcTemplate jdbcTemplate;
 
     public FeishuInboxScheduler(AiFeishuInboundEventMapper mapper, FeishuInboundEventProcessor processor,
-                                CollaborationProperties properties) {
-        this.mapper = mapper; this.processor = processor; this.properties = properties;
+                                CollaborationProperties properties, JdbcTemplate jdbcTemplate) {
+        this.mapper = mapper; this.processor = processor; this.properties = properties; this.jdbcTemplate = jdbcTemplate;
     }
 
     @Scheduled(fixedDelayString = "${ai.collaboration.inbox-interval-ms:500}")
     public void poll() {
         if (!properties.isEnabled()) return;
-        List<String> ids = mapper.selectClaimCandidates(properties.getInboxBatchSize());
+        List<String> ids = selectClaimCandidates();
         if (ids.isEmpty()) return;
         String token = UUID.randomUUID().toString();
         mapper.claim(ids, token, properties.getInboxClaimSeconds());
         mapper.selectClaimed(token).forEach(event -> process(event, token));
+    }
+
+    // Keep only this empty-poll query outside MyBatis so StdOutImpl can still print useful business SQL.
+    private List<String> selectClaimCandidates() {
+        return jdbcTemplate.queryForList(CLAIM_CANDIDATES_SQL, String.class, properties.getInboxBatchSize());
     }
 
     public void processNow(String id) {

@@ -73,7 +73,7 @@ jeecg:
 
 ai:
   executor:
-    gateway: disabled
+    gateway: http
     connector-max-request-bytes: 1048576
     connector-max-response-bytes: 1048576
   collaboration:
@@ -87,7 +87,8 @@ ai:
     notification-group: jeecg-feishu-notifier
     notification-pending-idle-seconds: 60
     notification-max-retries: 10
-    delivery-interval-ms: 500
+    # Empty delivery polling is routine background work; keep it responsive without flooding SQL logs.
+    delivery-interval-ms: 5000
     delivery-batch-size: 50
     delivery-claim-seconds: 30
     run-detail-base-url: http://127.0.0.1:3100/multi-agent/runs
