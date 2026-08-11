@@ -8,6 +8,9 @@ import org.jeecg.modules.airag.agent.config.AiAgentProperties;
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
 import org.jeecg.modules.airag.agent.entity.AiConnector;
 import org.jeecg.modules.airag.agent.mapper.AiConnectorMapper;
+import org.jeecg.modules.airag.agent.model.ConnectorHttpTransport;
+import org.jeecg.modules.airag.agent.model.ConnectorInvocationService;
+import org.jeecg.modules.airag.agent.model.ModelCallService;
 import org.jeecg.modules.airag.agent.support.ConnectorUriPolicy;
 import org.jeecg.modules.airag.agent.support.SecretCipherService;
 import org.jeecg.modules.airag.execution.config.AiExecutorProperties;
@@ -91,9 +94,14 @@ class HttpAgentExecutionGatewayTest {
         current.setResultContractVersion("LEGACY");
         AiConnectorMapper connectorMapper = mock(AiConnectorMapper.class);
         when(connectorMapper.selectOne(any())).thenReturn(current);
-        return new HttpAgentExecutionGateway(mapper, connectorMapper, new SecretCipherService(agentProperties),
-                new ConnectorUriPolicy(agentProperties), agentProperties, new AiExecutorProperties(),
-                new AgentResultValidator());
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】正式 Gateway 测试复用统一 Transport 和调用服务-----------
+        SecretCipherService cipher = new SecretCipherService(agentProperties);
+        ConnectorUriPolicy uriPolicy = new ConnectorUriPolicy(agentProperties);
+        ConnectorInvocationService invocationService = new ConnectorInvocationService(mapper,
+                new ConnectorHttpTransport(uriPolicy, cipher, agentProperties, new AiExecutorProperties()),
+                new ModelCallService(List.of()), new AgentResultValidator(), cipher);
+        return new HttpAgentExecutionGateway(connectorMapper, invocationService);
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】正式 Gateway 测试复用统一 Transport 和调用服务-----------
     }
 
     private AgentExecutionRequest request(ObjectMapper mapper) {

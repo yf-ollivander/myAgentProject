@@ -15,7 +15,7 @@
 - 人工操作：NEEDS_INPUT、重试耗尽、同 run/node 恢复、取消、失败运行新 run 重试、依赖禁用取消。
 - 调度恢复：Outbox claimToken、Redis Group、ACK 边界、XPENDING/XCLAIM、MySQL lease、dispatchVersion 去重。
 - API：运行列表、详情、事件、取消、重试、介入、Artifact 和摘要；请求未知字段强制拒绝。
-- 配置：dev 使用 Mock Gateway，prod 使用缺省 disabled Gateway；Module 04 可通过提供真实 Gateway Bean 替换。
+- 配置：dev 使用 Mock Gateway；`ai.executor.gateway=http` 启用统一 Custom/模型 HTTP Gateway，缺省仍为 disabled。
 
 ## 验证结果
 
@@ -31,7 +31,7 @@
 
 - 配置真实 MySQL 5.7+ 环境后执行 `_4 + _5`、事务回滚和生成列唯一键测试。
 - 配置真实 Redis 5 后执行 Group、pending、claim、ack、断连和重启恢复测试。
-- Module 04 提供 Result 1.1 HTTP Gateway 和 notification Stream 消费者后，再验证真实 Agent/飞书闭环。
+- 配置真实 Provider、密钥和 allowlist 后验证模型 Agent 与飞书闭环。
 - Module 05 只消费脱敏 API，禁止直接展示历史 `definition_json`。
 
 ## 主要风险
@@ -41,3 +41,11 @@
 - 本机未提供真实 MySQL/Redis，因此数据库并发和 Redis 恢复结论仍需外部环境证据。
 - 现有 Maven 编译器资源关闭故障会让标准生命周期返回失败，应依据源码诊断和分离 Surefire 结果判断。
 - 后台线程的租户恢复、运行快照脱敏和依赖查询必须在后续模块回归中持续检查。
+
+## 模型调用 Gateway 增补（2026-08-10）
+
+- 执行引擎继续只依赖 `AgentExecutionGateway` 和 `AgentResultContract`，不包含 Provider 分支。
+- `HttpAgentExecutionGateway` 把稳定 `invocationId` 作为内部 `ModelCallRequest.requestId`，并透传 input、resumeInput 和 Artifact descriptors。
+- 模型 TEXT 与 RESULT_1_1 在 Gateway 边界转换为 Agent Result 1.1 后进入现有 Validator、重试、WAITING 和 Artifact 流程。
+- MySQL 权威状态、Outbox、Redis 5 Streams、lease、取消和介入恢复规则未改变。
+- 本地 Provider/Gateway 定向测试使用 Mock HTTP Server；真实外部模型、MySQL、Redis 和飞书证据仍需分开报告。

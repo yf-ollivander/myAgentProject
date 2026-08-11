@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.TextNode;
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
+import org.jeecg.modules.airag.agent.model.ConnectorContractPolicy;
 import org.jeecg.modules.airag.agent.entity.AiFeishuBot;
 import org.jeecg.modules.airag.agent.mapper.AiFeishuBotMapper;
 import org.jeecg.modules.airag.agent.service.*;
@@ -77,10 +78,12 @@ public class RunCreationService implements RunStartService {
     public RunCreateResult startDirectAgent(RunCreateRequest request, AgentAccessContext context, RunSourceContext source) {
         validateCommon(request,RunType.AGENT_DIRECT);
         AgentConfigSnapshot agent=agentProvider.resolveEnabledSnapshot(request.getAgentId(),context);
-        if (agent.getConnector() == null || !"1.1".equals(agent.getConnector().getResultContractVersion())) {
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】直跑与 Pipeline 使用相同 Provider 准入策略-----------
+        if (!ConnectorContractPolicy.isPipelineCompatible(agent.getConnector())) {
             throw ExecutionException.of(ExecutionErrorCode.RUN_DEPENDENCY_UNAVAILABLE,
-                    "Agent Connector must use Result 1.1");
+                    "Agent Connector cannot produce Result 1.1");
         }
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】直跑与 Pipeline 使用相同 Provider 准入策略-----------
         AiFeishuBot bot=requireNotificationBot(agent,context,source);
         // Direct runs persist their generated definition, so they must use the same secret-free snapshot as publication.
         PipelineDefinition definition=directDefinition(snapshotSanitizer.sanitize(agent),bot);

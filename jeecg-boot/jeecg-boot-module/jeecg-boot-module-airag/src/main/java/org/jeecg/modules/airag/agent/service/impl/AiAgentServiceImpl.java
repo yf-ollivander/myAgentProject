@@ -20,6 +20,7 @@ import org.jeecg.modules.airag.agent.entity.AiConnector;
 import org.jeecg.modules.airag.agent.entity.AiFeishuBot;
 import org.jeecg.modules.airag.agent.mapper.AiAgentMapper;
 import org.jeecg.modules.airag.agent.mapper.AiFeishuBotMapper;
+import org.jeecg.modules.airag.agent.model.ConnectorProviderType;
 import org.jeecg.modules.airag.agent.service.AgentConnectorInvoker;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.agent.service.IAiAgentService;
@@ -280,10 +281,21 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
         }
         Map<String, String> requestHeaders;
         AiConfigDtos.ResponseMapping responseMapping;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】解析无密钥模型配置进入不可变快照-----------
+        AiConfigDtos.ModelOptions modelOptions;
+        ConnectorProviderType provider = ConnectorProviderType.fromNullable(connector.getProviderType());
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】解析无密钥模型配置进入不可变快照-----------
         try {
-            requestHeaders = objectMapper.readValue(connector.getRequestHeaders(), Map.class);
-            responseMapping = AiConfigDtos.CONTRACT_LEGACY.equals(connector.getResultContractVersion())
+            requestHeaders = StringUtils.hasText(connector.getRequestHeaders())
+                    ? objectMapper.readValue(connector.getRequestHeaders(), Map.class) : new LinkedHashMap<>();
+            responseMapping = provider == ConnectorProviderType.CUSTOM
+                    && AiConfigDtos.CONTRACT_LEGACY.equals(connector.getResultContractVersion())
                     ? objectMapper.readValue(connector.getResponseMapping(), AiConfigDtos.ResponseMapping.class) : null;
+            // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】模型参数严格反序列化，Custom 不冻结无关字段-----------
+            modelOptions = provider.isModelProvider() && StringUtils.hasText(connector.getModelOptions())
+                    ? objectMapper.readValue(connector.getModelOptions(), AiConfigDtos.ModelOptions.class)
+                    : new AiConfigDtos.ModelOptions();
+            // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】模型参数严格反序列化，Custom 不冻结无关字段-----------
         } catch (Exception e) {
             throw new JeecgBootException("Connector snapshot configuration is invalid", e);
         }
@@ -316,6 +328,11 @@ public class AiAgentServiceImpl extends ServiceImpl<AiAgentMapper, AiAgent> impl
                         .authHeader(connector.getAuthHeader()).requestHeaders(requestHeaders)
                         .responseMapping(responseMapping).resultContractVersion(StringUtils.hasText(connector.getResultContractVersion())
                                 ? connector.getResultContractVersion() : AiConfigDtos.CONTRACT_LEGACY)
+                        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】冻结 Provider、模型和结果模式供 Adapter 使用-----------
+                        .providerType(provider.name()).modelName(connector.getModelName()).modelOptions(modelOptions)
+                        .modelResponseMode(StringUtils.hasText(connector.getModelResponseMode())
+                                ? connector.getModelResponseMode() : AiConfigDtos.RESPONSE_MODE_TEXT)
+                        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】冻结 Provider、模型和结果模式供 Adapter 使用-----------
                         .connectTimeout(connector.getConnectTimeout())
                         .readTimeout(connector.getReadTimeout()).secretConfigured(StringUtils.hasText(connector.getSecretCipher())).build())
                 .feishuBot(botSnapshot).build();

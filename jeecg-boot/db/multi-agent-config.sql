@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS `ai_connector` (
   `request_headers` text,
   `response_mapping` varchar(1000) DEFAULT NULL,
   `result_contract_version` varchar(16) NOT NULL DEFAULT 'LEGACY',
+  -- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】同步模型 Provider fresh-install 字段-----------
+  `provider_type` varchar(32) NOT NULL DEFAULT 'CUSTOM',
+  `model_name` varchar(128) DEFAULT NULL,
+  `model_options` text,
+  `model_response_mode` varchar(16) NOT NULL DEFAULT 'TEXT',
+  -- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】同步模型 Provider fresh-install 字段-----------
   `secret_cipher` text,
   `connect_timeout` int NOT NULL DEFAULT 10,
   `read_timeout` int NOT NULL DEFAULT 300,
@@ -28,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `ai_connector` (
   `last_test_duration_ms` bigint DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_ai_connector_code` (`connector_code`),
+  KEY `idx_ai_connector_provider` (`provider_type`, `enabled`),
   KEY `idx_ai_connector_enabled` (`enabled`),
   KEY `idx_ai_connector_org` (`sys_org_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HTTP Agent Connector configuration';
@@ -98,7 +105,7 @@ INSERT IGNORE INTO `sys_permission`
 VALUES
 ('2026071300000000001','','多 Agent 管理','/multi-agent','layouts/default/index',1,'MultiAgentRoot','/multi-agent/agents',0,NULL,'0',2,1,'ant-design:deployment-unit-outlined',0,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
 ('2026071300000000002','2026071300000000001','Agent 管理','/multi-agent/agents','super/multiagent/agent/AiAgentList',1,'AiAgentList',NULL,1,NULL,'0',1,0,'ant-design:robot-outlined',1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
-('2026071300000000003','2026071300000000001','HTTP Connector','/multi-agent/connectors','super/multiagent/connector/AiConnectorList',1,'AiConnectorList',NULL,1,NULL,'0',2,0,'ant-design:api-outlined',1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
+('2026071300000000003','2026071300000000001','模型 Connector','/multi-agent/connectors','super/multiagent/connector/AiConnectorList',1,'AiConnectorList',NULL,1,NULL,'0',2,0,'ant-design:api-outlined',1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
 ('2026071300000000004','2026071300000000001','飞书机器人','/multi-agent/feishu-bots','super/multiagent/feishu/AiFeishuBotList',1,'AiFeishuBotList',NULL,1,NULL,'0',3,0,'ant-design:message-outlined',1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
 ('2026071300000000011','2026071300000000002','查询',NULL,NULL,0,NULL,NULL,2,'ai:agent:list','1',1,0,NULL,1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
 ('2026071300000000012','2026071300000000002','新增',NULL,NULL,0,NULL,NULL,2,'ai:agent:add','1',2,0,NULL,1,0,0,0,NULL,'admin',NOW(),NULL,NULL,0,0,'1',0),
@@ -126,6 +133,12 @@ VALUES
 UPDATE `sys_permission`
 SET `redirect` = '/multi-agent/agents'
 WHERE `id` = '2026071300000000001';
+
+-- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】修复已有 fresh-install 菜单名称-----------
+UPDATE `sys_permission`
+SET `name` = '模型 Connector'
+WHERE `id` = '2026071300000000003';
+-- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】修复已有 fresh-install 菜单名称-----------
 
 INSERT IGNORE INTO `sys_role_permission` (`id`,`role_id`,`permission_id`,`data_rule_ids`,`operate_date`,`operate_ip`)
 SELECT MD5(CONCAT('f6817f48af4fb3af11b9e8bf182f618b', `id`)), 'f6817f48af4fb3af11b9e8bf182f618b', `id`, NULL, NOW(), '127.0.0.1'

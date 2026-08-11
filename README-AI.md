@@ -7,7 +7,7 @@ Module 1 adds three management areas under the `Multi-Agent Management` menu:
 
 - Agents: `/api/ai/agents`
 - Authorized Agent options: `/api/ai/agents/options`
-- HTTP Connectors: `/api/ai/connectors`
+- Model Connectors: `/api/ai/connectors`
 - Feishu bots: `/api/ai/feishu-bots`
 
 Before saving credentials, inject a stable AES-256 key. Generate it once with `openssl rand -base64 32`, store it in the deployment secret manager, and expose it as `AI_CONFIG_SECRET_KEY`. Losing or changing this key makes existing encrypted credentials unreadable.
@@ -17,11 +17,26 @@ Optional settings:
 - `AI_CALLBACK_BASE_URL`: reserved public JEECG base URL for a future HTTP callback mode; SDK long connection mode does not use it.
 - `AI_FEISHU_API_BASE_URL`: Feishu API base URL; primarily overridden by automated tests.
 - `AI_MOCK_AGENT_ENABLED=true`: exposes the deterministic development endpoint `/api/ai/mock-agent/execute`.
-- `AI_AGENT_ALLOWED_HOSTS`: comma-separated exact hosts or `*.example.com` patterns allowed for Connector calls. An empty value permits all HTTP/HTTPS hosts and should not be used in production.
+- `AI_AGENT_ALLOWED_HOSTS`: comma-separated exact hosts or `*.example.com` patterns allowed for Connector calls. An empty value rejects Connector tests and formal execution.
 
-Existing databases must run `V3.9.3_1__multi_agent_config.sql`, `V3.9.3_2__multi_agent_menu_redirect.sql`, and `V3.9.3_3__multi_agent_bot_entry_mode.sql` in order when Flyway is disabled. Databases that already completed Module 1 V1.0 only need the V1.1 `V3.9.3_3` migration. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
+Existing databases with Flyway disabled must apply the missing multi-agent migrations from `_1` through `_7` in numeric order. `_7` adds model Provider fields and renames the existing menu without changing its route or permissions. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
 
 Connector and Feishu tests call external services but never create formal Agent runs. Feishu bots support `DIRECT_AGENT` and `ORCHESTRATOR`; only direct bots can be bound to an Agent. `commandEnabled=false` keeps metadata-only reception, while `true` hands validated events to a bounded internal processor without doing work on the SDK callback thread. User binding, deduplication, run creation, command parsing, replies, Redis scheduling, pipelines, and run inspection remain outside this module.
+
+### Model Connector Providers
+
+| Provider | Default base URL | Default path | Authentication |
+| --- | --- | --- | --- |
+| OpenAI-compatible | `https://api.openai.com` | `/v1/chat/completions` | Bearer |
+| DeepSeek | `https://api.deepseek.com` | `/chat/completions` | Bearer |
+| Anthropic | `https://api.anthropic.com` | `/v1/messages` | `x-api-key` + `anthropic-version: 2023-06-01` |
+| Gemini | `https://generativelanguage.googleapis.com` | `/v1beta/models/{model}:generateContent` | `x-goog-api-key` |
+| Ollama | `http://127.0.0.1:11434` | `/api/chat` | None |
+| Custom | User supplied | User supplied | NONE, BEARER, or API_KEY |
+
+Model Providers require an explicit model name. `TEXT` converts non-empty model text to a SUCCESS-only Agent Result 1.1 response. Use `RESULT_1_1` when a Pipeline needs `NEEDS_INPUT`, Artifacts, or model-declared failures. Both modes are synchronous and non-streaming; Tool Calling, SSE, visual input, and audio input are not supported in this version.
+
+Ollama and private endpoints remain subject to the same SSRF policy as public Providers. Add `127.0.0.1` or the exact deployment host to `AI_AGENT_ALLOWED_HOSTS`; never use a broad wildcard to make local development convenient.
 
 一个全栈式 AI 开发平台，旨在帮助开发者快速构建和部署个性化的 AI 应用。
 

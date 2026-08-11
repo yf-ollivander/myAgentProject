@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.pipeline.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
+import org.jeecg.modules.airag.agent.model.ConnectorContractPolicy;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.agent.service.AuthorizedAgentConfigProvider;
 import org.jeecg.modules.airag.agent.support.AgentConfigSnapshotSanitizer;
@@ -156,10 +157,12 @@ public class PipelinePublishServiceImpl implements PipelinePublishService {
     private AgentConfigSnapshot resolveAgentSnapshot(String agentId, AgentAccessContext context) {
         try {
             AgentConfigSnapshot snapshot = agentProvider.resolveEnabledSnapshot(agentId, context);
-            if (snapshot.getConnector() == null || !"1.1".equals(snapshot.getConnector().getResultContractVersion())) {
+            // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】允许模型 TEXT/RESULT_1_1 并保留 Custom 1.1 门禁-----------
+            if (!ConnectorContractPolicy.isPipelineCompatible(snapshot.getConnector())) {
                 throw PipelineException.of(PipelineErrorCode.PIPELINE_AGENT_NOT_AVAILABLE,
-                        "Agent Connector must use Result 1.1", agentId);
+                        "Agent Connector cannot produce Result 1.1", agentId);
             }
+            // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】允许模型 TEXT/RESULT_1_1 并保留 Custom 1.1 门禁-----------
             return snapshot;
         } catch (RuntimeException exception) {
             String message = exception.getMessage();

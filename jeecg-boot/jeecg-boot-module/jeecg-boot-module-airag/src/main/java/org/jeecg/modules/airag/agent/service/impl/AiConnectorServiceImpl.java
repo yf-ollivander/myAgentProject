@@ -15,6 +15,9 @@ import org.jeecg.modules.airag.agent.entity.AiAgent;
 import org.jeecg.modules.airag.agent.entity.AiConnector;
 import org.jeecg.modules.airag.agent.mapper.AiAgentMapper;
 import org.jeecg.modules.airag.agent.mapper.AiConnectorMapper;
+import org.jeecg.modules.airag.agent.model.ConnectorContractPolicy;
+import org.jeecg.modules.airag.agent.model.ConnectorProviderType;
+import org.jeecg.modules.airag.agent.model.ModelResponseMode;
 import org.jeecg.modules.airag.agent.service.AgentConnectorInvoker;
 import org.jeecg.modules.airag.agent.service.IAiConnectorService;
 import org.jeecg.modules.airag.agent.support.ConnectorUriPolicy;
@@ -34,7 +37,7 @@ import java.util.regex.Pattern;
 public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiConnector> implements IAiConnectorService {
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final Set<String> PROTECTED_HEADERS = Set.of(
-            "authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-length", "transfer-encoding");
+            "authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-type", "content-length", "transfer-encoding");
     private final ObjectMapper objectMapper;
     private final SecretCipherService secretCipherService;
     private final ConnectorUriPolicy uriPolicy;
@@ -156,40 +159,65 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
     }
 
     private void apply(AiConnector entity, AiConfigDtos.ConnectorUpsertRequest request) {
-        uriPolicy.resolve(request.getBaseUrl(), request.getPath());
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】按 Provider 校验模型路径并规范化双契约字段-----------
+        ConnectorProviderType previousProvider = ConnectorProviderType.fromNullable(entity.getProviderType());
+        ConnectorProviderType provider = requireProvider(request.getProviderType());
+        validateEndpoint(provider, request.getBaseUrl(), request.getPath(), request.getModelName());
+        validateModelConfiguration(provider, request.getModelName(), request.getModelResponseMode());
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】按 Provider 校验模型路径并规范化双契约字段-----------
         entity.setName(request.getName());
         entity.setBaseUrl(request.getBaseUrl().trim());
         entity.setPath(request.getPath().trim());
         entity.setAuthType(request.getAuthType());
         entity.setAuthHeader("API_KEY".equals(request.getAuthType())
-                ? (StringUtils.hasText(request.getAuthHeader()) ? request.getAuthHeader().trim() : "X-API-Key") : null);
+                ? (StringUtils.hasText(request.getAuthHeader()) ? request.getAuthHeader().trim()
+                : (StringUtils.hasText(provider.getDefaultAuthHeader()) ? provider.getDefaultAuthHeader() : "X-API-Key")) : null);
         validateHeaders(request.getRequestHeaders(), entity.getAuthHeader());
-        boolean legacy = AiConfigDtos.CONTRACT_LEGACY.equals(request.getResultContractVersion());
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】模型 Provider 始终形成 Result 1.1，Custom 保留旧契约-----------
+        String effectiveContract = ConnectorContractPolicy.effectiveResultContract(provider, request.getResultContractVersion());
+        boolean legacy = provider == ConnectorProviderType.CUSTOM
+                && AiConfigDtos.CONTRACT_LEGACY.equals(effectiveContract);
         if (legacy) validateMapping(request.getResponseMapping());
         try {
             entity.setRequestHeaders(objectMapper.writeValueAsString(
                     request.getRequestHeaders() == null ? new LinkedHashMap<>() : request.getRequestHeaders()));
             // Result 1.1 is parsed strictly and must never inherit legacy JSON-pointer mapping behavior.
             entity.setResponseMapping(legacy ? objectMapper.writeValueAsString(request.getResponseMapping()) : null);
+            entity.setModelOptions(provider.isModelProvider()
+                    ? objectMapper.writeValueAsString(request.getModelOptions() == null
+                    ? new AiConfigDtos.ModelOptions() : request.getModelOptions()) : null);
         } catch (Exception e) {
-            throw new JeecgBootException("Connector headers or response mapping are invalid", e);
+            throw new JeecgBootException("Connector headers, response mapping, or model options are invalid", e);
         }
         entity.setConnectTimeout(request.getConnectTimeout());
         entity.setReadTimeout(request.getReadTimeout());
-        entity.setResultContractVersion(request.getResultContractVersion());
+        entity.setResultContractVersion(effectiveContract);
+        entity.setProviderType(provider.name());
+        entity.setModelName(provider.isModelProvider() ? request.getModelName().trim() : null);
+        entity.setModelResponseMode(provider.isModelProvider()
+                ? ModelResponseMode.fromNullable(request.getModelResponseMode()).name()
+                : AiConfigDtos.RESPONSE_MODE_TEXT);
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】模型 Provider 始终形成 Result 1.1，Custom 保留旧契约-----------
         // Blank values retain the existing secret so normal edits cannot erase credentials accidentally.
         if (request.isClearSecret()) {
             entity.setSecretCipher(null);
         } else if (StringUtils.hasText(request.getSecret())) {
             entity.setSecretCipher(secretCipherService.encrypt(request.getSecret()));
         }
-        if ("NONE".equals(entity.getAuthType())) {
+        // update-begin---author:Codex ---date:2026-08-10  for:【REQ-HTTP-MODEL-20260810】模型切换到 Custom 时保留凭据，避免 Provider 切换造成不可逆丢失-----------
+        if ("NONE".equals(entity.getAuthType()) && provider == ConnectorProviderType.CUSTOM
+                && previousProvider == ConnectorProviderType.CUSTOM) {
             entity.setSecretCipher(null);
         }
+        // update-end---author:Codex ---date:2026-08-10  for:【REQ-HTTP-MODEL-20260810】模型切换到 Custom 时保留凭据，避免 Provider 切换造成不可逆丢失-----------
     }
 
     private void validateEnabled(AiConnector entity) {
-        uriPolicy.resolve(entity.getBaseUrl(), entity.getPath());
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】启用前复核 Provider、模型和实际请求路径-----------
+        ConnectorProviderType provider = requireProvider(entity.getProviderType());
+        validateModelConfiguration(provider, entity.getModelName(), entity.getModelResponseMode());
+        validateEndpoint(provider, entity.getBaseUrl(), entity.getPath(), entity.getModelName());
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】启用前复核 Provider、模型和实际请求路径-----------
         if (!"NONE".equals(entity.getAuthType()) && !StringUtils.hasText(entity.getSecretCipher())) {
             throw new JeecgBootException("Connector secret is required for " + entity.getAuthType());
         }
@@ -200,6 +228,38 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
             throw new JeecgBootException("AI_CONFIG_SECRET_KEY is not configured");
         }
     }
+
+    // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】集中校验 Provider 和模型必填规则-----------
+    private ConnectorProviderType requireProvider(String value) {
+        try {
+            return ConnectorProviderType.fromNullable(value);
+        } catch (IllegalArgumentException invalid) {
+            throw new JeecgBootException("Unsupported Connector providerType");
+        }
+    }
+
+    private void validateModelConfiguration(ConnectorProviderType provider, String modelName, String responseMode) {
+        if (!provider.isModelProvider()) {
+            return;
+        }
+        if (!StringUtils.hasText(modelName)) {
+            throw new JeecgBootException("Model name is required for model Providers");
+        }
+        try {
+            ModelResponseMode.fromNullable(responseMode);
+        } catch (IllegalArgumentException invalid) {
+            throw new JeecgBootException("Unsupported model response mode");
+        }
+    }
+
+    private void validateEndpoint(ConnectorProviderType provider, String baseUrl, String path, String modelName) {
+        try {
+            uriPolicy.resolve(baseUrl, provider.resolvePath(path, modelName));
+        } catch (RuntimeException invalid) {
+            throw new JeecgBootException("Connector URL or Provider path is invalid");
+        }
+    }
+    // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】集中校验 Provider 和模型必填规则-----------
 
     private void validateHeaders(Map<String, String> headers, String authHeader) {
         if (headers == null) {
@@ -264,13 +324,26 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
         view.setAuthHeader(entity.getAuthHeader());
         view.setResultContractVersion(StringUtils.hasText(entity.getResultContractVersion())
                 ? entity.getResultContractVersion() : AiConfigDtos.CONTRACT_LEGACY);
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】按旧数据默认值返回模型配置-----------
+        ConnectorProviderType provider = requireProvider(entity.getProviderType());
+        view.setProviderType(provider.name());
+        view.setModelName(entity.getModelName());
+        view.setModelResponseMode(StringUtils.hasText(entity.getModelResponseMode())
+                ? entity.getModelResponseMode() : AiConfigDtos.RESPONSE_MODE_TEXT);
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】按旧数据默认值返回模型配置-----------
         try {
-            view.setRequestHeaders(objectMapper.readValue(entity.getRequestHeaders(), Map.class));
+            view.setRequestHeaders(StringUtils.hasText(entity.getRequestHeaders())
+                    ? objectMapper.readValue(entity.getRequestHeaders(), Map.class) : new LinkedHashMap<>());
             view.setResponseMapping(AiConfigDtos.CONTRACT_LEGACY.equals(view.getResultContractVersion())
+                    && provider == ConnectorProviderType.CUSTOM
                     ? objectMapper.readValue(entity.getResponseMapping(), AiConfigDtos.ResponseMapping.class) : null);
+            view.setModelOptions(provider.isModelProvider() && StringUtils.hasText(entity.getModelOptions())
+                    ? objectMapper.readValue(entity.getModelOptions(), AiConfigDtos.ModelOptions.class)
+                    : new AiConfigDtos.ModelOptions());
         } catch (Exception e) {
             view.setRequestHeaders(new LinkedHashMap<>());
             view.setResponseMapping(new AiConfigDtos.ResponseMapping());
+            view.setModelOptions(new AiConfigDtos.ModelOptions());
         }
         view.setSecretConfigured(StringUtils.hasText(entity.getSecretCipher()));
         view.setConnectTimeout(entity.getConnectTimeout());

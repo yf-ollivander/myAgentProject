@@ -2,8 +2,11 @@ package org.jeecg.modules.airag.agent.dto;
 
 import com.alibaba.fastjson.annotation.JSONField;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,6 +18,8 @@ import lombok.ToString;
 import org.jeecg.common.api.vo.Result;
 
 import java.util.Date;
+import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -27,6 +32,11 @@ public final class AiConfigDtos {
     public static final String ORCHESTRATOR = "ORCHESTRATOR";
     public static final String CONTRACT_LEGACY = "LEGACY";
     public static final String CONTRACT_1_1 = "1.1";
+    // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】固定 Provider 和模型结果模式公共值-----------
+    public static final String PROVIDER_CUSTOM = "CUSTOM";
+    public static final String RESPONSE_MODE_TEXT = "TEXT";
+    public static final String RESPONSE_MODE_RESULT_1_1 = "RESULT_1_1";
+    // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】固定 Provider 和模型结果模式公共值-----------
 
     @Data
     public static class AgentUpsertRequest {
@@ -68,6 +78,16 @@ public final class AiConfigDtos {
         private ResponseMapping responseMapping = new ResponseMapping();
         @NotBlank @Pattern(regexp = "LEGACY|1\\.1")
         private String resultContractVersion = CONTRACT_LEGACY;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】接收严格模型 Provider 配置-----------
+        @NotBlank @Pattern(regexp = "OPENAI_COMPATIBLE|DEEPSEEK|ANTHROPIC|GEMINI|OLLAMA|CUSTOM")
+        private String providerType = PROVIDER_CUSTOM;
+        @Size(max = 128)
+        private String modelName;
+        @Valid
+        private ModelOptions modelOptions = new ModelOptions();
+        @NotBlank @Pattern(regexp = "TEXT|RESULT_1_1")
+        private String modelResponseMode = RESPONSE_MODE_TEXT;
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】接收严格模型 Provider 配置-----------
         @JSONField(serialize = false)
         @ToString.Exclude
         @Size(max = 4000)
@@ -88,6 +108,23 @@ public final class AiConfigDtos {
         @NotBlank @Size(max = 255)
         private String summaryPointer = "/summary";
     }
+
+    // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】限制可透传的通用模型参数-----------
+    @Data
+    public static class ModelOptions implements Serializable {
+        @DecimalMin("0.0") @DecimalMax("2.0")
+        private BigDecimal temperature;
+        @DecimalMin("0.0") @DecimalMax("1.0")
+        private BigDecimal topP;
+        @Min(1) @Max(65536)
+        private Integer maxTokens;
+
+        @JsonAnySetter
+        public void rejectUnknown(String name, Object value) {
+            throw new IllegalArgumentException("Unknown model option: " + name);
+        }
+    }
+    // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】限制可透传的通用模型参数-----------
 
     @Data
     public static class FeishuBotUpsertRequest {
@@ -182,6 +219,12 @@ public final class AiConfigDtos {
         private Map<String, String> requestHeaders;
         private ResponseMapping responseMapping;
         private String resultContractVersion;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】返回模型 Provider 展示字段-----------
+        private String providerType;
+        private String modelName;
+        private ModelOptions modelOptions;
+        private String modelResponseMode;
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】返回模型 Provider 展示字段-----------
         private boolean secretConfigured;
         private Integer connectTimeout;
         private Integer readTimeout;

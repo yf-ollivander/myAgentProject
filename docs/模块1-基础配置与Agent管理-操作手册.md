@@ -478,8 +478,45 @@ DROP TABLE IF EXISTS ai_connector;
 ## 13. 当前主要风险
 
 - 加密密钥丢失或不同实例使用不同密钥，会导致已有凭据无法解密。
-- 生产允许列表为空会放开所有 HTTP/HTTPS 主机，增加 SSRF 风险。
+- Connector 允许列表为空时测试和正式执行都会 fail closed；漏配会导致全部外部模型调用失败。
 - 已有 Docker 数据卷不会重新执行 MySQL 初始化脚本，容易漏迁移。
 - 菜单 SQL 只自动授权默认管理员，其他角色需要人工授权。
 - 真实飞书测试依赖应用权限、外网、Chat ID 和租户令牌配置。
-- 当前标准 Maven、前端生产构建和真实数据库并发验收尚未在本机完整通过，发布前必须补做。
+- 前端生产构建已在本机通过；标准 Maven 仍受既有 javac 资源关闭异常影响，真实数据库并发验收仍需在发布前补做。
+
+## 14. 模型 Connector 配置与使用
+
+### 14.1 数据库和环境
+
+已有数据库在 `_1` 至 `_6` 后执行 `V3.9.3_7__multi_agent_connector_provider.sql`；新数据库使用已同步的 `jeecg-boot/db/multi-agent-config.sql`。真实调用必须同时配置稳定的 `AI_CONFIG_SECRET_KEY` 和非空 `AI_AGENT_ALLOWED_HOSTS`。
+
+### 14.2 推荐配置流程
+
+1. 新增“模型 Connector”，先选择 Provider。
+2. 系统自动填充官方 Base URL、Path、鉴权和必要 Header；私有网关只修改确有差异的字段。
+3. 填写 Model Name 和凭据。Ollama 无需凭据，但本机地址仍须加入 allowlist。
+4. 普通文本任务选择“纯文本”；需要人工介入、Artifacts 或失败重试语义时选择“Result 1.1”。
+5. 保存后先执行“测试”，测试成功再启用 Connector 和引用它的 Agent。
+
+Provider 切换不会回显或自动清除已保存密钥。空值或旧 Provider 默认值会更新为新预设；自定义地址、Path、鉴权或 Header 会保留并显示“已保留自定义值”，必须重新测试确认它们仍适用于新 Provider。
+
+### 14.3 Provider 差异
+
+| Provider | 默认地址与接口 | 凭据 |
+| --- | --- | --- |
+| OpenAI-compatible | `https://api.openai.com/v1/chat/completions` | Bearer Token |
+| DeepSeek | `https://api.deepseek.com/chat/completions` | Bearer Token |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `x-api-key`；系统补充 `anthropic-version` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` | `x-goog-api-key` |
+| Ollama | `http://127.0.0.1:11434/api/chat` | 无鉴权 |
+| Custom | 用户配置 | 沿用 LEGACY 或 Result 1.1 |
+
+高级配置只允许 `temperature` 0 至 2、`topP` 0 至 1、`maxTokens` 1 至 65536。未填写时不发送；Anthropic 因接口必填会使用 `maxTokens=4096`。未知参数由后端拒绝，不能通过 JSON 任意透传厂商参数。
+
+### 14.4 结果与安全边界
+
+- `TEXT` 只生成 `SUCCESS`、`needsUser=false`、`retryable=false` 和 `output.text`；空文本返回 `MODEL_RESPONSE_EMPTY`。
+- `RESULT_1_1` 必须返回无 Markdown 围栏的严格 Agent Result 1.1 JSON，并通过现有 Validator。
+- 测试与正式 Pipeline 共用相同 Adapter、超时、1 MiB 上限、无重定向、allowlist、DNS 和脱敏策略。
+- 模型原始响应、密钥、鉴权 Header 和完整系统提示词不得写入日志或运行快照。
+- 首期不支持流式响应、Tool Calling、视觉或音频输入。

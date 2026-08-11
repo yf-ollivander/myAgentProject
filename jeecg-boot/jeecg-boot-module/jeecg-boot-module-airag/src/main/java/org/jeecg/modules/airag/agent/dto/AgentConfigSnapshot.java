@@ -37,6 +37,12 @@ public class AgentConfigSnapshot implements Serializable {
         Map<String, String> requestHeaders;
         AiConfigDtos.ResponseMapping responseMapping;
         String resultContractVersion;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】冻结无密钥模型 Provider 配置-----------
+        String providerType;
+        String modelName;
+        AiConfigDtos.ModelOptions modelOptions;
+        String modelResponseMode;
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】冻结无密钥模型 Provider 配置-----------
         Integer connectTimeout;
         Integer readTimeout;
         boolean secretConfigured;

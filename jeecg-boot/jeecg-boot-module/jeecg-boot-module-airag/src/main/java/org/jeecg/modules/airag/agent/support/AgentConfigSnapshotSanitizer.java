@@ -50,6 +50,10 @@ public class AgentConfigSnapshotSanitizer {
                 .responseMapping(AiConfigDtos.CONTRACT_1_1.equals(source.getResultContractVersion())
                         ? null : source.getResponseMapping())
                 .resultContractVersion(source.getResultContractVersion())
+                // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】保留非敏感模型配置供运行时适配-----------
+                .providerType(source.getProviderType()).modelName(source.getModelName())
+                .modelOptions(source.getModelOptions()).modelResponseMode(source.getModelResponseMode())
+                // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】保留非敏感模型配置供运行时适配-----------
                 .connectTimeout(source.getConnectTimeout())
                 .readTimeout(source.getReadTimeout()).secretConfigured(source.isSecretConfigured()).build();
     }

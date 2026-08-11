@@ -7,9 +7,14 @@ import org.jeecg.modules.airag.agent.config.AiAgentProperties;
 import org.jeecg.modules.airag.agent.dto.AiConfigDtos;
 import org.jeecg.modules.airag.agent.entity.AiAgent;
 import org.jeecg.modules.airag.agent.entity.AiConnector;
+import org.jeecg.modules.airag.agent.model.ConnectorHttpTransport;
+import org.jeecg.modules.airag.agent.model.ConnectorInvocationService;
+import org.jeecg.modules.airag.agent.model.ModelCallService;
 import org.jeecg.modules.airag.agent.support.ConnectorUriPolicy;
 import org.jeecg.modules.airag.agent.support.HttpAgentConnectorInvoker;
 import org.jeecg.modules.airag.agent.support.SecretCipherService;
+import org.jeecg.modules.airag.execution.config.AiExecutorProperties;
+import org.jeecg.modules.airag.pipeline.validation.AgentResultValidator;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
@@ -48,8 +53,13 @@ class HttpAgentConnectorInvokerTest {
             ObjectMapper mapper = new ObjectMapper();
             AiAgentProperties properties = properties();
             SecretCipherService cipher = new SecretCipherService(properties);
-            HttpAgentConnectorInvoker invoker = new HttpAgentConnectorInvoker(
-                    mapper, cipher, new ConnectorUriPolicy(properties));
+            // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Legacy 回归同样通过统一调用服务-----------
+            ConnectorUriPolicy uriPolicy = new ConnectorUriPolicy(properties);
+            ConnectorInvocationService invocationService = new ConnectorInvocationService(mapper,
+                    new ConnectorHttpTransport(uriPolicy, cipher, properties, new AiExecutorProperties()),
+                    new ModelCallService(List.of()), new AgentResultValidator(), cipher);
+            HttpAgentConnectorInvoker invoker = new HttpAgentConnectorInvoker(invocationService);
+            // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Legacy 回归同样通过统一调用服务-----------
             AiConnector connector = connector(server.getAddress().getPort(), mapper);
             AiAgent agent = new AiAgent();
             agent.setAgentCode("testAgent");
@@ -100,6 +110,9 @@ class HttpAgentConnectorInvokerTest {
         connector.setPath("/success");
         connector.setRequestHeaders("{}");
         connector.setResponseMapping(mapper.writeValueAsString(mapping));
+        connector.setProviderType("CUSTOM");
+        connector.setResultContractVersion("LEGACY");
+        connector.setModelResponseMode("TEXT");
         connector.setConnectTimeout(2);
         connector.setReadTimeout(2);
         return connector;

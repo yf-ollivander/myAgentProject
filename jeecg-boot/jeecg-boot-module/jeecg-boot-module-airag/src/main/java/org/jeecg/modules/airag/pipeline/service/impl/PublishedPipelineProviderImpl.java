@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.pipeline.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.jeecg.common.config.TenantContext;
 import org.jeecg.modules.airag.agent.dto.AgentConfigSnapshot;
+import org.jeecg.modules.airag.agent.model.ConnectorContractPolicy;
 import org.jeecg.modules.airag.agent.service.AgentAccessContext;
 import org.jeecg.modules.airag.agent.service.AuthorizedAgentConfigProvider;
 import org.jeecg.modules.airag.pipeline.contract.AgentNodeConfig;
@@ -125,11 +126,12 @@ public class PublishedPipelineProviderImpl implements PublishedPipelineProvider,
                 .map(node -> codec.parseNodeConfig(node, AgentNodeConfig.class))
                 .forEach(config -> {
                     AgentConfigSnapshot agentSnapshot = agentProvider.resolveEnabledSnapshot(config.getAgentId(), context);
-                    if (agentSnapshot.getConnector() == null
-                            || !"1.1".equals(agentSnapshot.getConnector().getResultContractVersion())) {
+                    // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】运行前按 Provider 感知策略复核 Connector-----------
+                    if (!ConnectorContractPolicy.isPipelineCompatible(agentSnapshot.getConnector())) {
                         throw PipelineException.of(PipelineErrorCode.PIPELINE_AGENT_NOT_AVAILABLE,
                                 "Pipeline Agent is not available", config.getAgentId());
                     }
+                    // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】运行前按 Provider 感知策略复核 Connector-----------
                 });
         String botId = snapshot.getDefinition().getPipeline().getNotificationBotId();
         botResolver.resolveAvailable(botId, context);

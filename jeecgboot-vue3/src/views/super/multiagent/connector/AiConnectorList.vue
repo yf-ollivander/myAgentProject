@@ -9,7 +9,7 @@
       </template>
     </BasicTable>
     <AiConnectorDrawer @register="registerDrawer" @success="reload" />
-    <a-modal v-model:open="testOpen" title="测试 HTTP Connector" :confirm-loading="testLoading" @ok="submitTest">
+    <a-modal v-model:open="testOpen" title="测试模型 Connector" :confirm-loading="testLoading" @ok="submitTest">
       <a-textarea v-model:value="testInput" :rows="10" spellcheck="false" />
     </a-modal>
   </div>
@@ -28,14 +28,21 @@
   const [registerDrawer, { openDrawer }] = useDrawer();
   const testOpen = ref(false);
   const testLoading = ref(false);
-  const testInput = ref('{\n  "task": "health check"\n}');
+  const testInput = ref('{\n  "prompt": "你好"\n}');
   const testRecord = ref<any>();
+  // Provider and result mode are the primary operational facts; keep endpoint available for troubleshooting.
+  const providerLabels: Record<string, string> = {
+    OPENAI_COMPATIBLE: 'OpenAI-compatible', DEEPSEEK: 'DeepSeek', ANTHROPIC: 'Anthropic', GEMINI: 'Gemini', OLLAMA: 'Ollama', CUSTOM: 'Custom',
+  };
   const columns = [
     { title: '名称', dataIndex: 'name', width: 180 },
     { title: '代码', dataIndex: 'connectorCode', width: 160 },
+    { title: 'Provider', dataIndex: 'providerType', width: 150, customRender: ({ text }) => providerLabels[text] || text || 'Custom' },
+    { title: 'Model Name', dataIndex: 'modelName', width: 160, customRender: ({ text }) => text || '-' },
     { title: 'Endpoint', dataIndex: 'baseUrl', width: 280, customRender: ({ record }) => `${record.baseUrl}${record.path}` },
     { title: '鉴权', dataIndex: 'authType', width: 100 },
-    { title: '结果协议', dataIndex: 'resultContractVersion', width: 110 },
+    { title: 'Result Mode', dataIndex: 'modelResponseMode', width: 120,
+      customRender: ({ record }) => record.providerType === 'CUSTOM' || !record.providerType ? record.resultContractVersion : record.modelResponseMode },
     { title: '凭据', dataIndex: 'secretConfigured', width: 90, customRender: ({ text, record }) => record.authType === 'NONE' ? '-' : (text ? '已配置' : '未配置') },
     { title: '状态', dataIndex: 'enabled', width: 90, customRender: ({ text }) => (text ? '启用' : '禁用') },
     { title: '最近测试', dataIndex: 'lastTestStatus', width: 110 },
@@ -47,13 +54,13 @@
     { label: '状态', field: 'enabled', component: 'Select', componentProps: { options: [{ label: '启用', value: true }, { label: '禁用', value: false }] } },
   ];
   const { tableContext } = useListPage({ tableProps: {
-    title: 'HTTP Connector', api: listConnectors, columns, canResize: false, rowKey: 'id',
+    title: '模型 Connector', api: listConnectors, columns, canResize: false, rowKey: 'id',
     formConfig: { labelWidth: 80, schemas: searchFormSchema, autoSubmitOnEnter: true }, actionColumn: { width: 220 },
   }});
   const [registerTable, { reload }] = tableContext;
 
   function openEditor(record?: any) { openDrawer(true, { id: record?.id }); }
-  function openTest(record: any) { testRecord.value = record; testInput.value = '{\n  "task": "health check"\n}'; testOpen.value = true; }
+  function openTest(record: any) { testRecord.value = record; testInput.value = '{\n  "prompt": "你好"\n}'; testOpen.value = true; }
   async function submitTest() {
     try {
       testLoading.value = true;
