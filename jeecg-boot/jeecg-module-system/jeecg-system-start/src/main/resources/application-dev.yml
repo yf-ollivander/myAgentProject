@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8085
   tomcat:
     max-swallow-size: -1
     basedir: ..
@@ -328,7 +328,7 @@ jeecg:
       # OpenAI 兼容 base 地址（必填）
       base-url: https://api.deepseek.com
       # API Key（必填，留空则 AI 不可用）
-      api-key: 
+      api-key:
       # 模型名
       model: deepseek-v4-pro
       #确定性输出，默认temperature=0
@@ -378,7 +378,9 @@ cas:
 ai:
   executor:
     enabled: true
-    gateway: mock
+    # update-begin---author:Codex ---date:2026-08-11  for：【REQ-HTTP-MODEL-20260810】环境变量优先并使用 HTTP Gateway 作为开发默认值-----------
+    gateway: ${AI_EXECUTOR_GATEWAY:http}
+    # update-end---author:Codex ---date:2026-08-11  for：【REQ-HTTP-MODEL-20260810】环境变量优先并使用 HTTP Gateway 作为开发默认值-----------
     core-pool-size: 2
     max-pool-size: 5
     queue-capacity: 100

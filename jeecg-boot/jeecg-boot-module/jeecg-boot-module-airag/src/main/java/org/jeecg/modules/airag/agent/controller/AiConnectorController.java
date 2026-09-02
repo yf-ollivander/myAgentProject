@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -21,9 +22,11 @@ import org.springframework.web.bind.annotation.*;
 public class AiConnectorController {
     private static final String COMPONENT = "super/multiagent/connector/AiConnectorList";
     private final IAiConnectorService service;
+    private final ObjectMapper objectMapper;
 
-    public AiConnectorController(IAiConnectorService service) {
+    public AiConnectorController(IAiConnectorService service, ObjectMapper objectMapper) {
         this.service = service;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -95,6 +98,7 @@ public class AiConnectorController {
     @AutoLog("Test HTTP Connector")
     public Result<AiConfigDtos.ConnectionTestResult> test(@PathVariable String id,
             @RequestBody(required = false) AiConfigDtos.TestInput request) {
-        return Result.OK(service.test(id, request == null ? null : request.getInput()));
+        // Convert the Jackson 3 MVC payload to the Jackson 2 tree used by the Connector protocol layer.
+        return Result.OK(service.test(id, request == null ? null : request.toInternalJson(objectMapper)));
     }
 }

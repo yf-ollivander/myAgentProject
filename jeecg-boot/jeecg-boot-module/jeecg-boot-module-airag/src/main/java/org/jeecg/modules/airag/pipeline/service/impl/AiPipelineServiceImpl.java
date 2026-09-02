@@ -138,16 +138,21 @@ public class AiPipelineServiceImpl extends ServiceImpl<AiPipelineMapper, AiPipel
     public PipelineDtos.DraftView getDraft(String id) {
         AiPipeline pipeline = permissionService.requireVisibleCurrent(id);
         return new PipelineDtos.DraftView(pipeline.getDraftRevision(),
-                codec.readDefinition(pipeline.getDraftDefinitionJson()), codec.readUi(pipeline.getDraftUiJson()));
+                codec.readUntyped(codec.write(codec.readDefinition(pipeline.getDraftDefinitionJson()))),
+                codec.readUntyped(pipeline.getDraftUiJson()));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public long saveDraft(String id, PipelineDtos.DraftSaveRequest request) {
         AiPipeline pipeline = permissionService.requireVisibleCurrent(id);
-        rejectSensitive(request.getDefinition());
-        PipelineDefinition definition = codec.readDefinition(request.getDefinition().toString());
-        PipelineUiModel ui = codec.readUi(request.getUi().toString());
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】在 MVC 边界绑定完成后统一转回 Jackson 2 树，保留严格 Pipeline 契约与敏感字段检查-----------
+        JsonNode definitionJson = codec.valueToTree(request.getDefinition());
+        JsonNode uiJson = codec.valueToTree(request.getUi());
+        rejectSensitive(definitionJson);
+        PipelineDefinition definition = codec.readDefinition(definitionJson.toString());
+        PipelineUiModel ui = codec.readUi(uiJson.toString());
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】在 MVC 边界绑定完成后统一转回 Jackson 2 树，保留严格 Pipeline 契约与敏感字段检查-----------
         validateDraftPayload(pipeline, definition, ui);
         AgentAccessContext context = contextFactory.current();
         int affected = baseMapper.updateDraft(id, context.tenantId(), request.getDraftRevision(),
@@ -196,7 +201,8 @@ public class AiPipelineServiceImpl extends ServiceImpl<AiPipelineMapper, AiPipel
         if (entity == null) throw PipelineException.of(PipelineErrorCode.PIPELINE_VERSION_NOT_FOUND,
                 "Pipeline version was not found", version);
         return new PipelineDtos.VersionView(entity.getId(), entity.getVersion(), entity.getSchemaVersion(),
-                sanitizer.sanitize(entity.getDefinitionJson()), codec.readUi(entity.getUiJson()),
+                codec.readUntyped(codec.write(sanitizer.sanitize(entity.getDefinitionJson()))),
+                codec.readUntyped(entity.getUiJson()),
                 entity.getDefinitionHash(), entity.getPublishedBy(), entity.getPublishedAt());
     }
 

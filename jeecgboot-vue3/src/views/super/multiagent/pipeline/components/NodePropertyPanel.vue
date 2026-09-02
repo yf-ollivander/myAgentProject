@@ -2,6 +2,9 @@
   <div v-if="draft" class="node-panel">
     <a-form layout="vertical" size="small">
       <a-form-item label="节点名称"><a-input v-model:value="draft.name" :disabled="readonly" @change="commit" /></a-form-item>
+      <!-- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】输入映射按节点 ID 引用，直接提供可复制值避免操作者猜测内部标识----------- -->
+      <a-form-item label="节点 ID"><a-typography-paragraph copyable><code>{{ draft.id }}</code></a-typography-paragraph></a-form-item>
+      <!-- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】输入映射按节点 ID 引用，直接提供可复制值避免操作者猜测内部标识----------- -->
 
       <template v-if="draft.type === 'START'">
         <div class="section-title">输入字段</div>
@@ -72,12 +75,15 @@
 <script lang="ts" setup>
   import { computed, defineComponent, h, ref, watch } from 'vue';
   import Icon from '/@/components/Icon';
+  import { clonePipelineJson } from '../pipeline.adapter';
   import { ARTIFACT_TYPES, VALUE_TYPES, type PipelineNode } from '../pipeline.types';
 
   const props = defineProps<{ node?: PipelineNode; allNodes: PipelineNode[]; agentOptions: any[]; readonly?: boolean }>();
   const emit = defineEmits(['update:node']);
   const draft = ref<any>();
-  watch(() => props.node, (node) => { draft.value = node ? structuredClone(node) : undefined; ensureShape(); }, { immediate: true, deep: true });
+  // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】props 与 ref 中的节点为 Vue Proxy，按 Pipeline JSON 契约复制后再编辑-----------
+  watch(() => props.node, (node) => { draft.value = node ? clonePipelineJson(node) : undefined; ensureShape(); }, { immediate: true, deep: true });
+  // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】props 与 ref 中的节点为 Vue Proxy，按 Pipeline JSON 契约复制后再编辑-----------
 
   const valueTypeOptions = VALUE_TYPES.map((value) => ({ label: value, value }));
   const artifactTypeOptions = ARTIFACT_TYPES.map((value) => ({ label: value, value }));
@@ -102,7 +108,7 @@
     if (draft.value.type === 'NOTIFY') config.messageTemplate ||= '';
     if (draft.value.type === 'END') { config.output ||= {}; config.artifactSelection ||= []; config.completionSummary ||= ''; }
   }
-  function commit() { if (!props.readonly) emit('update:node', structuredClone(draft.value)); }
+  function commit() { if (!props.readonly) emit('update:node', clonePipelineJson(draft.value)); }
   function addSchema(target, key) { target.push({ [key]: '', type: 'string', required: true }); commit(); }
   function remove(target, index) { target.splice(index, 1); commit(); }
   function addInput() { let key = 'input'; let i = 1; while (key in draft.value.config.input) key = `input${++i}`; draft.value.config.input[key] = ''; commit(); }
@@ -120,7 +126,7 @@
     props: { modelValue: { type: Array, default: () => [] }, title: String, readonly: Boolean, nodeOptions: { type: Array, default: () => [] } },
     emits: ['update:modelValue', 'change'],
     setup(rowProps, { emit: rowEmit }) {
-      const update = (index, field, value) => { const next: any[] = structuredClone(rowProps.modelValue); next[index][field] = value; rowEmit('update:modelValue', next); rowEmit('change'); };
+      const update = (index, field, value) => { const next: any[] = clonePipelineJson(rowProps.modelValue); next[index][field] = value; rowEmit('update:modelValue', next); rowEmit('change'); };
       const add = () => { rowEmit('update:modelValue', [...rowProps.modelValue, { name: '', sourceNodeId: '', types: [], required: true, selectionMode: 'LATEST' }]); rowEmit('change'); };
       const removeRow = (index) => { const next = [...rowProps.modelValue]; next.splice(index, 1); rowEmit('update:modelValue', next); rowEmit('change'); };
       return () => h('div', { class: 'artifact-block' }, [

@@ -46,7 +46,10 @@ services:
       AI_CONFIG_SECRET_KEY: ${AI_CONFIG_SECRET_KEY:-}
       AI_CALLBACK_BASE_URL: ${AI_CALLBACK_BASE_URL:-http://localhost:8080/jeecg-boot}
       AI_MOCK_AGENT_ENABLED: ${AI_MOCK_AGENT_ENABLED:-false}
-      AI_AGENT_ALLOWED_HOSTS: ${AI_AGENT_ALLOWED_HOSTS:-}
+      # update-begin---author:Codex ---date:2026-08-11  for：【REQ-HTTP-MODEL-20260810】Compose 环境缺失时沿用安全的官方域名与 HTTP Gateway 默认值-----------
+      AI_AGENT_ALLOWED_HOSTS: ${AI_AGENT_ALLOWED_HOSTS:-api.openai.com,api.deepseek.com,api.anthropic.com,generativelanguage.googleapis.com}
+      AI_EXECUTOR_GATEWAY: ${AI_EXECUTOR_GATEWAY:-http}
+      # update-end---author:Codex ---date:2026-08-11  for：【REQ-HTTP-MODEL-20260810】Compose 环境缺失时沿用安全的官方域名与 HTTP Gateway 默认值-----------
     ports:
       - 8080:8080
     networks:

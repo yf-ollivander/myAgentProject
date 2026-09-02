@@ -1,6 +1,5 @@
 package org.jeecg.modules.airag.agent.support;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.event.cardcallback.P2CardActionTriggerHandler;
 import com.lark.oapi.event.cardcallback.model.P2CardActionTrigger;
@@ -65,9 +64,8 @@ public class FeishuLongConnectionManager {
 
     @EventListener(ApplicationReadyEvent.class)
     public void restoreEnabledConnections() {
-        botMapper.selectList(new LambdaQueryWrapper<AiFeishuBot>()
-                        .eq(AiFeishuBot::getEnabled, true))
-                .forEach(this::start);
+        // Application startup is not associated with one tenant, so restore every enabled tenant Bot explicitly.
+        botMapper.selectSystemEnabled().forEach(this::start);
     }
 
     public synchronized void start(AiFeishuBot bot) {

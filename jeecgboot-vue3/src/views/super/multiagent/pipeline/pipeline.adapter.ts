@@ -1,5 +1,11 @@
 import type { LogicFlowData, PipelineDefinition, PipelineEdge, PipelineMetadata, PipelineNode, PipelineUi } from './pipeline.types';
 
+// update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Pipeline 是 JSON 契约，通过 JSON API 去除 Vue Proxy，避免 structuredClone 在选中节点时抛 DataCloneError-----------
+export function clonePipelineJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+// update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Pipeline 是 JSON 契约，通过 JSON API 去除 Vue Proxy，避免 structuredClone 在选中节点时抛 DataCloneError-----------
+
 export function toLogicFlow(definition: PipelineDefinition, ui: PipelineUi): LogicFlowData {
   const positions = new Map(ui.nodes.map((node) => [node.id, node]));
   return {
@@ -11,7 +17,7 @@ export function toLogicFlow(definition: PipelineDefinition, ui: PipelineUi): Log
         x: position.x,
         y: position.y,
         text: node.name,
-        properties: { nodeType: node.type, name: node.name, config: structuredClone(node.config) },
+        properties: { nodeType: node.type, name: node.name, config: clonePipelineJson(node.config) },
       };
     }),
     edges: definition.edges.map((edge) => ({
@@ -30,7 +36,7 @@ export function fromLogicFlow(graph: LogicFlowData, pipeline: PipelineMetadata, 
     id: node.id,
     type: node.properties.nodeType,
     name: node.properties.name || String(node.text || node.properties.nodeType),
-    config: structuredClone(node.properties.config || {}),
+    config: clonePipelineJson(node.properties.config || {}),
   }));
   const edges: PipelineEdge[] = graph.edges.map((edge) => ({
     id: edge.id,
@@ -39,13 +45,13 @@ export function fromLogicFlow(graph: LogicFlowData, pipeline: PipelineMetadata, 
     branch: edge.properties?.branch || 'DEFAULT',
   }));
   return {
-    definition: { schemaVersion: '1.1', pipeline: structuredClone(pipeline), nodes, edges },
+    definition: { schemaVersion: '1.1', pipeline: clonePipelineJson(pipeline), nodes, edges },
     ui: { nodes: graph.nodes.map((node) => ({ id: node.id, x: node.x, y: node.y })), viewport },
   };
 }
 
 export function semanticDefinition(definition: PipelineDefinition): string {
-  const copy = structuredClone(definition);
+  const copy = clonePipelineJson(definition);
   copy.nodes.sort((a, b) => a.id.localeCompare(b.id));
   copy.edges.sort((a, b) => `${a.source}|${a.branch}|${a.target}|${a.id}`.localeCompare(`${b.source}|${b.branch}|${b.target}|${b.id}`));
   copy.pipeline.triggerAliases = [...new Set(copy.pipeline.triggerAliases)].sort();

@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -23,9 +24,11 @@ import java.util.List;
 public class AiAgentController {
     private static final String COMPONENT = "super/multiagent/agent/AiAgentList";
     private final IAiAgentService service;
+    private final ObjectMapper objectMapper;
 
-    public AiAgentController(IAiAgentService service) {
+    public AiAgentController(IAiAgentService service, ObjectMapper objectMapper) {
         this.service = service;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -106,6 +109,7 @@ public class AiAgentController {
     @AutoLog("Test Agent configuration")
     public Result<AiConfigDtos.ConnectionTestResult> test(@PathVariable String id,
             @RequestBody(required = false) AiConfigDtos.TestInput request) {
-        return Result.OK(service.test(id, request == null ? null : request.getInput()));
+        // Keep Agent tests on the same Jackson 3-to-2 boundary as direct Connector tests.
+        return Result.OK(service.test(id, request == null ? null : request.toInternalJson(objectMapper)));
     }
 }

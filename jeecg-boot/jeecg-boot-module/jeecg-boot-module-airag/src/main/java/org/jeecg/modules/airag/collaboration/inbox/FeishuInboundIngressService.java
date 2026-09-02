@@ -53,7 +53,8 @@ public class FeishuInboundIngressService implements FeishuInboundEventIngress {
         try {
             String json = canonicalMapper.writeValueAsString(payload);
             String payloadHash = hash(json);
-            AiFeishuBot bot = botMapper.selectById(botId);
+            // botId comes from the managed SDK connection, not the external payload; resolve its owning tenant explicitly.
+            AiFeishuBot bot = botMapper.selectSystemById(botId);
             if (bot == null || !Boolean.TRUE.equals(bot.getEnabled()) || !Boolean.TRUE.equals(bot.getCommandEnabled())) {
                 throw CollaborationException.notFound("FEISHU_BOT_NOT_AVAILABLE", "Feishu bot is not available");
             }

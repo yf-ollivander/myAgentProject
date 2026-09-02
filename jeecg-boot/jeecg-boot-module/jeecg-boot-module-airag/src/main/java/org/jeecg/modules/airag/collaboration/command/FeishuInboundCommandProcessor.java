@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.collaboration.command;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.airag.agent.entity.AiFeishuBot;
 import org.jeecg.modules.airag.agent.mapper.AiFeishuBotMapper;
@@ -23,12 +24,14 @@ import org.jeecg.modules.airag.execution.dto.ExecutionDtos.*;
 import org.jeecg.modules.airag.execution.service.*;
 import org.jeecg.modules.airag.pipeline.validation.PipelineException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+@Slf4j
 @Service
 public class FeishuInboundCommandProcessor implements FeishuInboundEventProcessor {
     private final AiFeishuInboundEventMapper eventMapper;
@@ -45,31 +48,54 @@ public class FeishuInboundCommandProcessor implements FeishuInboundEventProcesso
     private final FeishuRunCommandService runCommands;
     private final FeishuCardSigner cardSigner;
     private final AiFeishuSessionMapper sessionMapper;
+    private final ExecutionTenantScope tenantScope;
+    private final TransactionTemplate transactions;
 
     public FeishuInboundCommandProcessor(AiFeishuInboundEventMapper eventMapper, AiFeishuBotMapper botMapper,
             SecretCipherService cipher, ObjectMapper mapper, FeishuCommandParser parser,
             FeishuBindingService bindings, FeishuAccessService access, FeishuSessionService sessions,
             RunInterventionService interventions, RunNotificationViewProvider runViews,
             FeishuDeliveryService deliveries, FeishuRunCommandService runCommands,
-            FeishuCardSigner cardSigner, AiFeishuSessionMapper sessionMapper) {
+            FeishuCardSigner cardSigner, AiFeishuSessionMapper sessionMapper,
+            ExecutionTenantScope tenantScope, PlatformTransactionManager transactionManager) {
         this.eventMapper=eventMapper;this.botMapper=botMapper;this.cipher=cipher;this.mapper=mapper;this.parser=parser;
         this.bindings=bindings;this.access=access;this.sessions=sessions;
         this.interventions=interventions;this.runViews=runViews;this.deliveries=deliveries;
         this.runCommands=runCommands;
         this.cardSigner=cardSigner;this.sessionMapper=sessionMapper;
+        this.tenantScope=tenantScope;
+        this.transactions=new TransactionTemplate(transactionManager);
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void process(String inboundEventId) {
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】先结束失败事务，再独立提交拒绝回复，避免 rollback-only 吞掉可操作错误-----------
+        try {
+            transactions.executeWithoutResult(status -> processInTransaction(inboundEventId));
+        } catch (RuntimeException error) {
+            if (!isDeterministic(error)) throw error;
+            logRejected(inboundEventId, error);
+            transactions.executeWithoutResult(status -> rejectInTransaction(inboundEventId, error));
+        }
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】先结束失败事务，再独立提交拒绝回复，避免 rollback-only 吞掉可操作错误-----------
+    }
+
+    private void processInTransaction(String inboundEventId) {
         // Session row locks and Run/intervention changes must share one transaction for thread-level serialization.
         AiFeishuInboundEvent event = eventMapper.selectById(inboundEventId);
         if (event == null || !StringUtils.hasText(event.getPayloadCipher())) return;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】飞书工作线程没有 HTTP 租户上下文，整段 Run 创建必须使用 Inbox 持有的租户-----------
+        tenantScope.run(event.getTenantId(), () -> processEventInTenant(event));
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】飞书工作线程没有 HTTP 租户上下文，整段 Run 创建必须使用 Inbox 持有的租户-----------
+    }
+
+    private void processEventInTenant(AiFeishuInboundEvent event) {
         if (InboundEventType.CARD_ACTION.name().equals(event.getEventType())) {
             processCard(event); return;
         }
         JsonNode payload = read(cipher.decrypt(event.getPayloadCipher()));
-        AiFeishuBot bot = botMapper.selectById(event.getBotId());
+        // Inbox workers have no HTTP tenant context; the persisted internal botId is the system lookup boundary.
+        AiFeishuBot bot = botMapper.selectSystemById(event.getBotId());
         if (bot == null || !Boolean.TRUE.equals(bot.getEnabled()) || !Boolean.TRUE.equals(bot.getCommandEnabled())) {
             complete(event, "IGNORED", null, null); return;
         }
@@ -79,53 +105,81 @@ public class FeishuInboundCommandProcessor implements FeishuInboundEventProcesso
         String rawText = parser.extractText(text(payload, "content"));
         String chatId = text(payload, "chatId"); String messageId = text(payload, "messageId");
         String threadKey = first(text(payload, "rootId"), text(payload, "threadId"), messageId);
-        try {
-            Command command = parser.parse(rawText, text(payload, "chatType"), strings(payload.path("mentionKeys")));
-            if (CommandType.HELP.name().equals(command.type())) {
-                reply(event, bot, messageId, "HELP", "使用【流程代码或别名】，任务；角色【Agent代码】，任务；绑定【绑定码】");
-                complete(event, "HELP", null, null); return;
-            }
-            if (CommandType.BIND.name().equals(command.type())) {
-                bindings.consumeToken(bot.getId(), event.getSenderOpenId(), command.key());
-                reply(event, bot, messageId, "BINDING_USED", "绑定成功");
-                complete(event, "BINDING_USED", null, null); return;
-            }
-            AiFeishuUserBinding binding = bindings.requireEnabled(bot.getId(), event.getSenderOpenId());
-            AgentAccessContext context = new AgentAccessContext(binding.getUsername(), binding.getTenantId());
-            access.requireBot(bot.getId(), context, true);
-            AiFeishuSession active = sessions.lockActive(binding.getTenantId(), bot.getId(), chatId, threadKey);
-            if (active != null && StringUtils.hasText(event.getRunId()) && event.getRunId().equals(active.getRunId())) {
-                // A crash after the transaction commit but before Inbox cleanup must not resume or recreate the same Run.
-                complete(event, "RUN_CREATED", active.getRunId(), null);
-                return;
-            }
-            if (active != null && SessionStatus.WAITING.name().equals(active.getStatus())) {
-                supplyInput(event, bot, active, binding, rawText, messageId, context);
-                return;
-            }
-            if (active != null) throw CollaborationException.conflict("FEISHU_SESSION_CONFLICT", "This thread already has an active run");
-            RunCreateResult created = runCommands.startAndBind(event, bot, command, rawText, chatId, threadKey,
-                    messageId, binding, context);
-            complete(event, "RUN_CREATED", created.runId(), null);
-        } catch (CollaborationException | PipelineException | ExecutionException | JeecgBootException deterministic) {
-            reply(event, bot, messageId, "COMMAND_REJECTED", safe(deterministic.getMessage()));
-            complete(event, "REJECTED", null, null);
+        Command command = parser.parse(rawText, text(payload, "chatType"), strings(payload.path("mentionKeys")));
+        if (CommandType.HELP.name().equals(command.type())) {
+            reply(event, bot, messageId, "HELP", "使用【流程代码或别名】，任务；角色【Agent代码】，任务；绑定【绑定码】");
+            complete(event, "HELP", null, null); return;
         }
+        if (CommandType.BIND.name().equals(command.type())) {
+            bindings.consumeToken(bot.getId(), event.getSenderOpenId(), command.key());
+            reply(event, bot, messageId, "BINDING_USED", "绑定成功");
+            complete(event, "BINDING_USED", null, null); return;
+        }
+        AiFeishuUserBinding binding = bindings.requireEnabled(bot.getId(), event.getSenderOpenId());
+        AgentAccessContext context = new AgentAccessContext(binding.getUsername(), binding.getTenantId());
+        access.requireBot(bot.getId(), context, true);
+        AiFeishuSession active = sessions.lockActive(binding.getTenantId(), bot.getId(), chatId, threadKey);
+        if (active != null && StringUtils.hasText(event.getRunId()) && event.getRunId().equals(active.getRunId())) {
+            // A crash after the transaction commit but before Inbox cleanup must not resume or recreate the same Run.
+            complete(event, "RUN_CREATED", active.getRunId(), null);
+            return;
+        }
+        if (active != null && SessionStatus.WAITING.name().equals(active.getStatus())) {
+            supplyInput(event, bot, active, binding, rawText, messageId, context);
+            return;
+        }
+        if (active != null) throw CollaborationException.conflict("FEISHU_SESSION_CONFLICT", "This thread already has an active run");
+        RunCreateResult created = runCommands.startAndBind(event, bot, command, rawText, chatId, threadKey,
+                messageId, binding, context);
+        log.info("Feishu command accepted: inboundEventId={}, messageId={}, botKey={}, runId={}",
+                event.getId(), event.getMessageId(), bot.getBotKey(), created.runId());
+        complete(event, "RUN_CREATED", created.runId(), null);
     }
 
     private void processCard(AiFeishuInboundEvent event) {
-        JsonNode payload=read(cipher.decrypt(event.getPayloadCipher()));AiFeishuBot bot=botMapper.selectById(event.getBotId());
-        try{if(bot==null||!Boolean.TRUE.equals(bot.getEnabled())||!Boolean.TRUE.equals(bot.getCommandEnabled()))throw CollaborationException.notFound("FEISHU_BOT_NOT_AVAILABLE","Feishu bot is not available");
-            if(!payload.path("actionValue").isObject()||!cardSigner.verify((ObjectNode)payload.path("actionValue")))throw CollaborationException.badRequest("FEISHU_CARD_SIGNATURE_INVALID","Card action is invalid");
-            ObjectNode value=(ObjectNode)payload.path("actionValue");String runId=value.path("runId").asText();String interventionId=value.path("interventionId").asText();String resumeToken=value.path("resumeToken").asText();InterventionAction action=InterventionAction.valueOf(value.path("action").asText());
-            AiFeishuUserBinding binding=bindings.requireEnabled(bot.getId(),event.getSenderOpenId());AgentAccessContext context=new AgentAccessContext(binding.getUsername(),binding.getTenantId());
-            access.requirePermissions(context,"ai:feishu:list",action==InterventionAction.CANCEL?"ai:run:cancel":"ai:run:intervene");
-            AiFeishuSession session=sessionMapper.selectByRunIdForUpdate(runId);if(session==null||!bot.getId().equals(session.getBotId())||!binding.getId().equals(session.getBindingId())||!event.getSenderOpenId().equals(session.getSenderOpenId()))throw CollaborationException.notFound("FEISHU_INTERVENTION_NOT_AVAILABLE","Intervention is not available");
-            RunNotificationViewProvider.RunCollaborationState state=runViews.state(runId,context);if(state.openIntervention()==null||!interventionId.equals(state.openIntervention().id())||!resumeToken.equals(state.openIntervention().resumeToken()))throw CollaborationException.notFound("FEISHU_INTERVENTION_NOT_AVAILABLE","Intervention is not available");
-            InterventionResolveRequest request=new InterventionResolveRequest();request.setRequestId("fs-int:"+event.getId());request.setSourceMessageId(event.getId());request.setAction(action);
-            if(action==InterventionAction.SUPPLY_INPUT){String supplied=payload.path("formValue").path("text").asText(payload.path("inputValue").asText());if(!StringUtils.hasText(supplied))throw CollaborationException.badRequest("FEISHU_COMMAND_INVALID","Supplemental input is required");ObjectNode resume=mapper.createObjectNode();resume.put("text",supplied);request.setResumeInput(resume);}
-            interventions.resolve(runId,interventionId,request,context);sessions.updateStatus(session,action==InterventionAction.CANCEL?SessionStatus.CANCELED:SessionStatus.ACTIVE,event.getMessageId());reply(event,bot,event.getMessageId(),action==InterventionAction.CANCEL?"RUN_CANCELED":"RUN_RESUMED","操作已处理");complete(event,"INTERVENTION_RESOLVED",runId,interventionId);
-        }catch(CollaborationException|ExecutionException|IllegalArgumentException deterministic){if(bot!=null&&StringUtils.hasText(event.getMessageId()))reply(event,bot,event.getMessageId(),"CARD_REJECTED",safe(deterministic.getMessage()));complete(event,"REJECTED",null,null);}
+        JsonNode payload=read(cipher.decrypt(event.getPayloadCipher()));AiFeishuBot bot=botMapper.selectSystemById(event.getBotId());
+        if(bot==null||!Boolean.TRUE.equals(bot.getEnabled())||!Boolean.TRUE.equals(bot.getCommandEnabled()))throw CollaborationException.notFound("FEISHU_BOT_NOT_AVAILABLE","Feishu bot is not available");
+        if(!payload.path("actionValue").isObject()||!cardSigner.verify((ObjectNode)payload.path("actionValue")))throw CollaborationException.badRequest("FEISHU_CARD_SIGNATURE_INVALID","Card action is invalid");
+        ObjectNode value=(ObjectNode)payload.path("actionValue");String runId=value.path("runId").asText();String interventionId=value.path("interventionId").asText();String resumeToken=value.path("resumeToken").asText();InterventionAction action=InterventionAction.valueOf(value.path("action").asText());
+        AiFeishuUserBinding binding=bindings.requireEnabled(bot.getId(),event.getSenderOpenId());AgentAccessContext context=new AgentAccessContext(binding.getUsername(),binding.getTenantId());
+        access.requirePermissions(context,"ai:feishu:list",action==InterventionAction.CANCEL?"ai:run:cancel":"ai:run:intervene");
+        AiFeishuSession session=sessionMapper.selectByRunIdForUpdate(runId);if(session==null||!bot.getId().equals(session.getBotId())||!binding.getId().equals(session.getBindingId())||!event.getSenderOpenId().equals(session.getSenderOpenId()))throw CollaborationException.notFound("FEISHU_INTERVENTION_NOT_AVAILABLE","Intervention is not available");
+        RunNotificationViewProvider.RunCollaborationState state=runViews.state(runId,context);if(state.openIntervention()==null||!interventionId.equals(state.openIntervention().id())||!resumeToken.equals(state.openIntervention().resumeToken()))throw CollaborationException.notFound("FEISHU_INTERVENTION_NOT_AVAILABLE","Intervention is not available");
+        InterventionResolveRequest request=new InterventionResolveRequest();request.setRequestId("fs-int:"+event.getId());request.setSourceMessageId(event.getId());request.setAction(action);
+        if(action==InterventionAction.SUPPLY_INPUT){String supplied=payload.path("formValue").path("text").asText(payload.path("inputValue").asText());if(!StringUtils.hasText(supplied))throw CollaborationException.badRequest("FEISHU_COMMAND_INVALID","Supplemental input is required");ObjectNode resume=mapper.createObjectNode();resume.put("text",supplied);request.setResumeInput(resume);}
+        interventions.resolve(runId,interventionId,request,context);sessions.updateStatus(session,action==InterventionAction.CANCEL?SessionStatus.CANCELED:SessionStatus.ACTIVE,event.getMessageId());reply(event,bot,event.getMessageId(),action==InterventionAction.CANCEL?"RUN_CANCELED":"RUN_RESUMED","操作已处理");complete(event,"INTERVENTION_RESOLVED",runId,interventionId);
+    }
+
+    private void rejectInTransaction(String inboundEventId, RuntimeException error) {
+        AiFeishuInboundEvent event = eventMapper.selectById(inboundEventId);
+        if (event == null) return;
+        AiFeishuBot bot = botMapper.selectSystemById(event.getBotId());
+        String type = InboundEventType.CARD_ACTION.name().equals(event.getEventType()) ? "CARD_REJECTED" : "COMMAND_REJECTED";
+        if (bot != null && StringUtils.hasText(event.getMessageId())) {
+            reply(event, bot, event.getMessageId(), type, safe(error.getMessage()));
+        }
+        complete(event, "REJECTED", null, null);
+    }
+
+    private boolean isDeterministic(RuntimeException error) {
+        return error instanceof CollaborationException || error instanceof PipelineException
+                || error instanceof ExecutionException || error instanceof JeecgBootException
+                || error instanceof IllegalArgumentException;
+    }
+
+    private void logRejected(String inboundEventId, RuntimeException error) {
+        AiFeishuInboundEvent event = eventMapper.selectById(inboundEventId);
+        log.warn("Feishu inbound rejected: inboundEventId={}, messageId={}, botId={}, eventType={}, errorCode={}, errorType={}, reason={}",
+                inboundEventId, event == null ? null : event.getMessageId(), event == null ? null : event.getBotId(),
+                event == null ? null : event.getEventType(), errorCode(error), error.getClass().getSimpleName(), diagnostic(error.getMessage()));
+    }
+
+    private String errorCode(RuntimeException error) {
+        if (error instanceof CollaborationException value) return value.getErrorCode();
+        if (error instanceof ExecutionException value) return value.getErrorCode().name();
+        if (error instanceof PipelineException value) return value.getErrorCode().name();
+        if (error instanceof JeecgBootException) return "JEECG_BOOT_EXCEPTION";
+        return "INVALID_ARGUMENT";
     }
 
     private void supplyInput(AiFeishuInboundEvent event, AiFeishuBot bot, AiFeishuSession session,
@@ -162,4 +216,5 @@ public class FeishuInboundCommandProcessor implements FeishuInboundEventProcesso
     private List<String> strings(JsonNode node) { List<String> values=new ArrayList<>(); if(node.isArray())node.forEach(v->values.add(v.asText()));return values; }
     private String first(String... values) { for(String value:values)if(StringUtils.hasText(value))return value;return null; }
     private String safe(String value) { return StringUtils.hasText(value) ? (value.length()>500?value.substring(0,500):value) : "请求无法处理"; }
+    private String diagnostic(String value) { return safe(value).replace('\r', ' ').replace('\n', ' '); }
 }

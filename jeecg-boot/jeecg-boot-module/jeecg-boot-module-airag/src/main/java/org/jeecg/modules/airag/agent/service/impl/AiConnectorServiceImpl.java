@@ -255,6 +255,9 @@ public class AiConnectorServiceImpl extends ServiceImpl<AiConnectorMapper, AiCon
     private void validateEndpoint(ConnectorProviderType provider, String baseUrl, String path, String modelName) {
         try {
             uriPolicy.resolve(baseUrl, provider.resolvePath(path, modelName));
+        } catch (JeecgBootException policyViolation) {
+            // Codex 2026-08-10 REQ-HTTP-MODEL-20260810: Preserve safe policy reasons so operators can correct configuration.
+            throw policyViolation;
         } catch (RuntimeException invalid) {
             throw new JeecgBootException("Connector URL or Provider path is invalid");
         }

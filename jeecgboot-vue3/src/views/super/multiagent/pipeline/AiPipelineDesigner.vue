@@ -14,7 +14,7 @@
       </div>
     </header>
     <main class="designer__main">
-      <NodePalette v-if="!readonlyMode" @drag="startDrag" />
+      <NodePalette v-if="!readonlyMode" @drag="startDrag" @add="addNode" />
       <section class="designer__canvas-wrap">
         <div ref="canvas" class="designer__canvas"></div>
         <ValidationPanel :issues="state.issues" @locate="locateIssue" />
@@ -25,9 +25,44 @@
             <PipelineSettings v-if="metadata" v-model="metadata" :bot-options="botOptions" :readonly="readonlyMode" @update:model-value="changed" />
           </a-tab-pane>
           <a-tab-pane key="node" tab="节点/边">
-            <NodePropertyPanel v-if="selectedNode" :node="selectedNode" :all-nodes="definitionNodes" :agent-options="agentOptions" :readonly="readonlyMode" @update:node="updateNode" />
+            <div v-if="selectedNode" class="element-panel">
+              <!-- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】为选中节点提供可发现的类型转换与删除入口----------- -->
+              <div class="element-panel__actions">
+                <a-form layout="vertical" class="element-panel__type-form">
+                  <a-form-item label="节点类型">
+                    <a-select :value="selectedNode.type" :options="nodeTypeOptions" :disabled="readonlyMode" @change="confirmNodeTypeChange" />
+                  </a-form-item>
+                </a-form>
+                <a-tooltip title="删除节点">
+                  <a-button v-if="!readonlyMode" danger type="text" aria-label="删除节点" @click="deleteSelectedElement">
+                    <Icon icon="ant-design:delete-outlined" />
+                  </a-button>
+                </a-tooltip>
+              </div>
+              <!-- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】为选中节点提供可发现的类型转换与删除入口----------- -->
+              <!-- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】提供可见的新增连线入口，作为画布锚点拖拽的易用补充----------- -->
+              <a-form v-if="!readonlyMode && selectedNode.type !== 'END'" layout="vertical" size="small" class="connection-panel">
+                <a-form-item label="新增连线到">
+                  <a-select v-model:value="newEdgeTargetId" show-search option-filter-prop="label" :options="newEdgeTargetOptions" placeholder="选择目标节点" />
+                </a-form-item>
+                <a-button block type="dashed" :disabled="!newEdgeTargetId" @click="addConnection"><Icon icon="ant-design:node-index-outlined" /> 新增连线</a-button>
+              </a-form>
+              <!-- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】提供可见的新增连线入口，作为画布锚点拖拽的易用补充----------- -->
+              <NodePropertyPanel :node="selectedNode" :all-nodes="definitionNodes" :agent-options="agentOptions" :readonly="readonlyMode" @update:node="updateNode" />
+            </div>
             <div v-else-if="selectedEdge" class="edge-panel">
-              <a-form layout="vertical"><a-form-item label="分支"><a-select :value="selectedEdge.properties?.branch || 'DEFAULT'" :disabled="readonlyMode" :options="branchOptions" @change="updateEdgeBranch" /></a-form-item></a-form>
+              <!-- update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】边属性面板补充显式删除操作----------- -->
+              <div class="element-panel__actions">
+                <a-form layout="vertical" class="element-panel__type-form">
+                  <a-form-item label="起点"><a-select :value="selectedEdge.sourceNodeId" show-search option-filter-prop="label" :disabled="readonlyMode" :options="edgeSourceOptions" @change="(value) => updateEdgeEndpoint('source', value)" /></a-form-item>
+                  <a-form-item label="终点"><a-select :value="selectedEdge.targetNodeId" show-search option-filter-prop="label" :disabled="readonlyMode" :options="edgeTargetOptions" @change="(value) => updateEdgeEndpoint('target', value)" /></a-form-item>
+                  <a-form-item label="分支"><a-select :value="selectedEdge.properties?.branch || 'DEFAULT'" :disabled="readonlyMode" :options="branchOptions" @change="updateEdgeBranch" /></a-form-item>
+                </a-form>
+                <a-tooltip title="删除边">
+                  <a-button v-if="!readonlyMode" danger type="text" aria-label="删除边" @click="deleteSelectedElement"><Icon icon="ant-design:delete-outlined" /></a-button>
+                </a-tooltip>
+              </div>
+              <!-- update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】边属性面板补充显式删除操作----------- -->
             </div>
             <div v-else class="property-empty">选择节点或边后编辑属性</div>
           </a-tab-pane>
@@ -54,10 +89,11 @@
   import PipelineSettings from './components/PipelineSettings.vue';
   import ValidationPanel from './components/ValidationPanel.vue';
   import VersionDrawer from './components/VersionDrawer.vue';
-  import { fromLogicFlow, toLogicFlow } from './pipeline.adapter';
+  import { clonePipelineJson, fromLogicFlow, toLogicFlow } from './pipeline.adapter';
   import { getPipelineDraft, getPipelineVersion, listNotificationBotOptions, PipelineApiError, publishPipeline, savePipelineDraft, validatePipeline } from './pipeline.api';
   import { PipelineDesignerState } from './pipeline.designer-state';
-  import type { LogicFlowData, PipelineMetadata, PipelineNode, ValidationIssue } from './pipeline.types';
+  import { connectionError, convertPipelineNode, defaultNodeConfig, NODE_TYPE_OPTIONS, shouldHandleDesignerDelete } from './pipeline.node-actions';
+  import type { EdgeBranch, LogicFlowData, NodeType, PipelineEdge, PipelineMetadata, PipelineNode, ValidationIssue } from './pipeline.types';
 
   const route = useRoute();
   const router = useRouter();
@@ -71,6 +107,7 @@
   const definitionNodes = ref<PipelineNode[]>([]);
   const selectedNode = ref<PipelineNode>();
   const selectedEdge = ref<any>();
+  const newEdgeTargetId = ref<string>();
   const agentOptions = ref<any[]>([]);
   const botOptions = ref<any[]>([]);
   const propertyTab = ref('pipeline');
@@ -79,6 +116,11 @@
   let logicFlow: LogicFlow | undefined;
   let uiViewport = { x: 0, y: 0, zoom: 1 };
   const branchOptions = ['DEFAULT', 'TRUE', 'FALSE'].map((value) => ({ label: value, value }));
+  const nodeTypeOptions = NODE_TYPE_OPTIONS;
+  const allNodeOptions = computed(() => definitionNodes.value.map((node) => ({ label: `${node.name} (${node.id})`, value: node.id, type: node.type })));
+  const newEdgeTargetOptions = computed(() => allNodeOptions.value.filter((option) => option.value !== selectedNode.value?.id && option.type !== 'START'));
+  const edgeSourceOptions = computed(() => allNodeOptions.value.filter((option) => option.value !== selectedEdge.value?.targetNodeId && option.type !== 'END'));
+  const edgeTargetOptions = computed(() => allNodeOptions.value.filter((option) => option.value !== selectedEdge.value?.sourceNodeId && option.type !== 'START'));
 
   onMounted(async () => {
     if (!pipelineId) { createMessage.error('缺少流程 ID'); router.back(); return; }
@@ -87,11 +129,12 @@
     }
     const source: any = readonlyMode ? await getPipelineVersion(pipelineId, versionNumber!) : await getPipelineDraft(pipelineId);
     state.draftRevision = source.draftRevision || 0;
-    metadata.value = structuredClone(source.definition.pipeline);
-    definitionNodes.value = structuredClone(source.definition.nodes);
+    metadata.value = clonePipelineJson(source.definition.pipeline);
+    definitionNodes.value = clonePipelineJson(source.definition.nodes);
     uiViewport = source.ui.viewport || uiViewport;
     await nextTick();
     initialize(toLogicFlow(source.definition, source.ui));
+    window.addEventListener('keydown', handleDesignerKeydown);
   });
 
   function initialize(data: LogicFlowData) {
@@ -99,11 +142,13 @@
     for (const type of ['start', 'agent', 'condition', 'notify', 'end']) register({ type: `pipeline-${type}`, component: PipelineNodeView }, logicFlow);
     logicFlow.render(data as any);
     if (readonlyMode) logicFlow.updateEditConfig({ isSilentMode: true, adjustNodePosition: false, adjustEdge: false, hideAnchors: true, nodeTextEdit: false, edgeTextEdit: false });
+    else logicFlow.updateEditConfig({ adjustEdgeStartAndEnd: true, hideAnchors: false });
     if (uiViewport.zoom !== 1) logicFlow.zoom(uiViewport.zoom);
     if (uiViewport.x || uiViewport.y) logicFlow.translate(uiViewport.x, uiViewport.y);
     logicFlow.on('node:click', ({ data }) => selectNode(data));
-    logicFlow.on('edge:click', ({ data }) => { selectedEdge.value = data; selectedNode.value = undefined; propertyTab.value = 'node'; });
-    logicFlow.on('blank:click', () => { selectedNode.value = undefined; selectedEdge.value = undefined; });
+    logicFlow.on('edge:click', ({ data }) => { selectedEdge.value = data; selectedNode.value = undefined; newEdgeTargetId.value = undefined; propertyTab.value = 'node'; });
+    logicFlow.on('edge:adjust', ({ data }) => { selectedEdge.value = data; selectedNode.value = undefined; newEdgeTargetId.value = undefined; propertyTab.value = 'node'; state.changed(); });
+    logicFlow.on('blank:click', () => { selectedNode.value = undefined; selectedEdge.value = undefined; newEdgeTargetId.value = undefined; });
     logicFlow.on('graph:change', () => { syncNodes(); state.changed(); });
   }
 
@@ -113,28 +158,107 @@
     definitionNodes.value = fromLogicFlow(graph, metadata.value).definition.nodes;
     if (selectedNode.value) selectedNode.value = definitionNodes.value.find((node) => node.id === selectedNode.value?.id);
   }
-  function selectNode(data) { syncNodes(); selectedNode.value = definitionNodes.value.find((node) => node.id === data.id); selectedEdge.value = undefined; propertyTab.value = 'node'; }
+  function selectNode(data) { syncNodes(); selectedNode.value = definitionNodes.value.find((node) => node.id === data.id); selectedEdge.value = undefined; newEdgeTargetId.value = undefined; propertyTab.value = 'node'; }
   function changed() { state.changed(); }
   function updateNode(node: PipelineNode) {
     state.assertEditable();
-    logicFlow?.setProperties(node.id, { nodeType: node.type, name: node.name, config: structuredClone(node.config) });
+    logicFlow?.setProperties(node.id, { nodeType: node.type, name: node.name, config: clonePipelineJson(node.config) });
     logicFlow?.updateText(node.id, node.name);
     selectedNode.value = node;
     syncNodes();
     state.changed();
   }
   function updateEdgeBranch(branch) { if (!selectedEdge.value || readonlyMode) return; logicFlow?.setProperties(selectedEdge.value.id, { branch }); logicFlow?.updateText(selectedEdge.value.id, branch === 'DEFAULT' ? '' : branch); selectedEdge.value.properties = { ...selectedEdge.value.properties, branch }; state.changed(); }
+  function graphEdges(): PipelineEdge[] {
+    if (!logicFlow) return [];
+    return (logicFlow.getGraphData() as LogicFlowData).edges.map((edge) => ({ id: edge.id, source: edge.sourceNodeId, target: edge.targetNodeId, branch: edge.properties?.branch || 'DEFAULT' }));
+  }
+  function addConnection() {
+    state.assertEditable();
+    if (!logicFlow || !selectedNode.value || !newEdgeTargetId.value) return;
+    const branch: EdgeBranch = 'DEFAULT';
+    const error = connectionError(graphEdges(), selectedNode.value.id, newEdgeTargetId.value, branch);
+    if (error) { createMessage.warning(error); return; }
+    let id = `edge_${Date.now().toString(36)}`;
+    let suffix = 1;
+    while (logicFlow.getEdgeDataById(id)) id = `edge_${Date.now().toString(36)}_${suffix++}`;
+    const edge = logicFlow.addEdge({ id, type: 'polyline', sourceNodeId: selectedNode.value.id, targetNodeId: newEdgeTargetId.value, properties: { branch } });
+    selectedEdge.value = edge.getData();
+    selectedNode.value = undefined;
+    newEdgeTargetId.value = undefined;
+    logicFlow.selectElementById(id);
+    state.changed();
+  }
+  function updateEdgeEndpoint(endpoint: 'source' | 'target', nodeId: string) {
+    state.assertEditable();
+    if (!logicFlow || !selectedEdge.value) return;
+    const current = selectedEdge.value;
+    const sourceNodeId = endpoint === 'source' ? nodeId : current.sourceNodeId;
+    const targetNodeId = endpoint === 'target' ? nodeId : current.targetNodeId;
+    const branch: EdgeBranch = current.properties?.branch || 'DEFAULT';
+    const error = connectionError(graphEdges(), sourceNodeId, targetNodeId, branch, current.id);
+    if (error) { createMessage.warning(error); return; }
+    const properties = clonePipelineJson(current.properties || { branch });
+    logicFlow.deleteEdge(current.id);
+    const edge = logicFlow.addEdge({ id: current.id, type: current.type || 'polyline', sourceNodeId, targetNodeId, text: branch === 'DEFAULT' ? '' : branch, properties });
+    selectedEdge.value = edge.getData();
+    logicFlow.selectElementById(current.id);
+    state.changed();
+  }
+  function confirmNodeTypeChange(nextType: NodeType) {
+    if (!selectedNode.value || nextType === selectedNode.value.type || readonlyMode) return;
+    const currentNode = selectedNode.value;
+    Modal.confirm({
+      title: '转换节点类型？',
+      content: `将“${currentNode.name}”转换为 ${nodeTypeOptions.find((option) => option.value === nextType)?.label}，原类型的配置会被清空，连线保留。`,
+      okText: '确认转换',
+      cancelText: '取消',
+      onOk: () => changeNodeType(currentNode, nextType),
+    });
+  }
+  function changeNodeType(node: PipelineNode, nextType: NodeType) {
+    state.assertEditable();
+    if (!logicFlow || node.type === nextType) return;
+    const nextNode = convertPipelineNode(node, nextType);
+    logicFlow.changeNodeType(node.id, `pipeline-${nextType.toLowerCase()}`);
+    logicFlow.setProperties(node.id, { nodeType: nextType, name: nextNode.name, config: clonePipelineJson(nextNode.config) });
+    logicFlow.updateText(node.id, nextNode.name);
+    syncNodes();
+    selectedNode.value = definitionNodes.value.find((item) => item.id === node.id) || nextNode;
+    logicFlow.selectElementById(node.id);
+    state.changed();
+  }
+  function deleteSelectedElement() {
+    state.assertEditable();
+    if (!logicFlow) return;
+    if (selectedNode.value) logicFlow.deleteNode(selectedNode.value.id);
+    else if (selectedEdge.value) logicFlow.deleteEdge(selectedEdge.value.id);
+    else return;
+    selectedNode.value = undefined;
+    selectedEdge.value = undefined;
+    syncNodes();
+    state.changed();
+  }
+  function handleDesignerKeydown(event: KeyboardEvent) {
+    if (!shouldHandleDesignerDelete(event, readonlyMode, Boolean(selectedNode.value || selectedEdge.value))) return;
+    event.preventDefault();
+    deleteSelectedElement();
+  }
   function startDrag(item) {
     state.assertEditable();
     const id = `${item.nodeType.toLowerCase()}_${Date.now().toString(36)}`;
-    logicFlow?.dnd.startDrag({ id, type: item.type, text: item.label, properties: { nodeType: item.nodeType, name: item.label, config: defaultConfig(item.nodeType) } });
+    logicFlow?.dnd.startDrag({ id, type: item.type, text: item.label, properties: { nodeType: item.nodeType, name: item.label, config: defaultNodeConfig(item.nodeType) } });
   }
-  function defaultConfig(type) {
-    if (type === 'START') return { inputSchema: [] };
-    if (type === 'AGENT') return { stageCode: '', agentId: '', resultContractVersion: '1.1', input: {}, outputSchema: [], artifactOutputs: [], artifactInputs: [], onError: 'INHERIT' };
-    if (type === 'CONDITION') return { left: { source: 'NODE_OUTPUT', nodeId: '', field: '', valueType: 'string' }, operator: 'EQ', right: { valueType: 'string', value: '' } };
-    if (type === 'NOTIFY') return { messageTemplate: '' };
-    return { output: {}, artifactSelection: [], completionSummary: '' };
+  function addNode(item) {
+    state.assertEditable();
+    if (!logicFlow || !canvas.value) return;
+    const id = `${item.nodeType.toLowerCase()}_${Date.now().toString(36)}`;
+    const bounds = canvas.value.getBoundingClientRect();
+    const point = logicFlow.getPointByClient({ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }).canvasOverlayPosition;
+    logicFlow.addNode({ id, type: item.type, x: point.x + (definitionNodes.value.length % 4) * 24, y: point.y + (definitionNodes.value.length % 4) * 24, text: item.label, properties: { nodeType: item.nodeType, name: item.label, config: defaultNodeConfig(item.nodeType) } });
+    const data: any = (logicFlow.getGraphData() as LogicFlowData).nodes.find((node) => node.id === id);
+    if (data) { logicFlow.selectElementById(id); selectNode(data); }
+    state.changed();
   }
   function snapshot() {
     if (!logicFlow || !metadata.value) throw new Error('设计器尚未加载');
@@ -144,7 +268,16 @@
   async function save() {
     state.assertEditable(); saving.value = true;
     try { const data = snapshot(); const revision = await savePipelineDraft(pipelineId, { draftRevision: state.draftRevision, ...data }); state.saved(revision); createMessage.success('草稿已保存'); return revision; }
-    catch (error) { if (error instanceof PipelineApiError && error.code === 409) Modal.confirm({ title: '草稿已被其他会话更新', content: '当前内容不会自动合并。重新加载后将显示数据库中的最新草稿。', okText: '重新加载', cancelText: '留在当前页', onOk: () => window.location.reload() }); throw error; }
+    catch (error) {
+      if (error instanceof PipelineApiError && error.code === 409) Modal.confirm({ title: '草稿已被其他会话更新', content: '当前内容不会自动合并。重新加载后将显示数据库中的最新草稿。', okText: '重新加载', cancelText: '留在当前页', onOk: () => window.location.reload() });
+      else {
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】保存 API 关闭了全局错误提示，设计器必须就地回显失败原因-----------
+        const message = error instanceof Error && error.message ? error.message : '草稿保存失败';
+        createMessage.error(message);
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】保存 API 关闭了全局错误提示，设计器必须就地回显失败原因-----------
+      }
+      throw error;
+    }
     finally { saving.value = false; }
   }
   async function validate() {
@@ -166,7 +299,7 @@
     if (!state.dirty || readonlyMode) { next(); return; }
     Modal.confirm({ title: '存在未保存修改', content: '离开后当前修改将丢失。', okText: '离开', cancelText: '继续编辑', onOk: () => next(), onCancel: () => next(false) });
   });
-  onBeforeUnmount(() => { logicFlow?.destroy(); logicFlow = undefined; });
+  onBeforeUnmount(() => { window.removeEventListener('keydown', handleDesignerKeydown); logicFlow?.destroy(); logicFlow = undefined; });
 </script>
 
 <style scoped>
@@ -180,7 +313,12 @@
   .designer__canvas { min-height: 0; flex: 1; }
   .designer__properties { width: min(390px, 34vw); flex: 0 0 min(390px, 34vw); overflow: auto; border-left: 1px solid #e1e5eb; background: #fff; }
   .designer__properties :deep(.ant-tabs-nav) { margin: 0; padding: 0 14px; }
-  .edge-panel { padding: 18px; }
+  .element-panel__actions { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px 0; border-bottom: 1px solid #edf0f3; }
+  .element-panel__type-form { min-width: 0; flex: 1; }
+  .element-panel__actions > .ant-btn { flex: 0 0 32px; margin-top: 27px; }
+  .connection-panel { padding: 14px 16px; border-bottom: 1px solid #edf0f3; }
+  .connection-panel :deep(.ant-form-item) { margin-bottom: 10px; }
+  .edge-panel { padding-bottom: 18px; }
   .property-empty { padding: 40px 18px; text-align: center; color: #8b95a5; }
   @media (max-width: 900px) { .designer__properties { width: 320px; flex-basis: 320px; } .designer__title { min-width: 100px; } .designer__actions .ant-btn:nth-child(4), .designer__actions .ant-btn:nth-child(5) { display: none; } }
 </style>

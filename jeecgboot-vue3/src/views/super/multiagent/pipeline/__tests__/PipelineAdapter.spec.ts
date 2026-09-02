@@ -1,5 +1,6 @@
 import { fromLogicFlow, semanticDefinition, toLogicFlow } from '../pipeline.adapter';
 import type { PipelineDefinition, PipelineUi } from '../pipeline.types';
+import { reactive } from 'vue';
 
 const definition: PipelineDefinition = {
   schemaVersion: '1.1',
@@ -25,5 +26,12 @@ describe('Pipeline Adapter', () => {
     const source = structuredClone(definition);
     source.edges[0].branch = 'TRUE';
     expect(fromLogicFlow(toLogicFlow(source, ui), source.pipeline).definition.edges[0].branch).toBe('TRUE');
+  });
+
+  it('accepts reactive pipeline metadata from the Vue designer', () => {
+    const graph = toLogicFlow(definition, ui);
+    const restored = fromLogicFlow(graph, reactive(structuredClone(definition.pipeline)));
+
+    expect(restored.definition.pipeline).toEqual(definition.pipeline);
   });
 });

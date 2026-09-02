@@ -1,5 +1,6 @@
 package org.jeecg.modules.airag.collaboration.inbox;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.airag.collaboration.config.CollaborationProperties;
 import org.jeecg.modules.airag.collaboration.contract.CollaborationEnums.InboundStatus;
 import org.jeecg.modules.airag.collaboration.entity.AiFeishuInboundEvent;
@@ -9,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.util.*;
 
+@Slf4j
 @Component
 public class FeishuInboxScheduler {
     private static final int[] BACKOFF = {1, 2, 5, 10, 30};
@@ -54,6 +56,11 @@ public class FeishuInboxScheduler {
             int retry = event.getRetryCount() + 1;
             String status = retry >= properties.getInboxMaxRetries() ? InboundStatus.DEAD.name() : InboundStatus.FAILED.name();
             int seconds = BACKOFF[Math.min(retry - 1, BACKOFF.length - 1)];
+            // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】记录安全事件元数据，定位 Inbox 重试但不泄露消息正文-----------
+            log.warn("Feishu Inbox processing failed: inboundEventId={}, messageId={}, botId={}, attempt={}, nextStatus={}, errorType={}, reason={}",
+                    event.getId(), event.getMessageId(), event.getBotId(), retry, status,
+                    error.getClass().getSimpleName(), abbreviate(error.getMessage()).replace('\r', ' ').replace('\n', ' '));
+            // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】记录安全事件元数据，定位 Inbox 重试但不泄露消息正文-----------
             mapper.markFailed(event.getId(), token, status, retry,
                     new Date(System.currentTimeMillis() + seconds * 1000L), abbreviate(error.getMessage()));
         }

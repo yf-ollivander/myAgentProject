@@ -182,6 +182,7 @@ $rng.Dispose()
 $env:AI_CONFIG_SECRET_KEY = '<生成的 Base64 密钥>'
 $env:AI_CALLBACK_BASE_URL = 'http://localhost:8080/jeecg-boot'
 $env:AI_AGENT_ALLOWED_HOSTS = '127.0.0.1,localhost,agent.example.com,*.internal.example.com'
+$env:AI_EXECUTOR_GATEWAY = 'http'
 $env:AI_MOCK_AGENT_ENABLED = 'true'
 ```
 
@@ -195,6 +196,7 @@ $env:AI_MOCK_AGENT_ENABLED = 'true'
 AI_CONFIG_SECRET_KEY=<生成的 Base64 密钥>
 AI_CALLBACK_BASE_URL=http://localhost:8080/jeecg-boot
 AI_AGENT_ALLOWED_HOSTS=agent.example.com,*.internal.example.com
+AI_EXECUTOR_GATEWAY=http
 AI_MOCK_AGENT_ENABLED=false
 ```
 
@@ -204,7 +206,7 @@ AI_MOCK_AGENT_ENABLED=false
 AI_FEISHU_API_BASE_URL=https://open.feishu.cn
 ```
 
-当前 Compose 文件已传递密钥、回调地址、Mock 开关和主机允许列表。飞书 API 地址默认使用官方地址；需要模拟飞书服务时，应把该环境变量额外传给后端容器。
+当前 Compose 文件已传递密钥、回调地址、Mock 开关、主机允许列表和执行 Gateway。飞书 API 地址默认使用官方地址；需要模拟飞书服务时，应把该环境变量额外传给后端容器。
 
 ### 5.4 主机允许列表规则
 
@@ -213,7 +215,7 @@ AI_FEISHU_API_BASE_URL=https://open.feishu.cn
 - `agent.example.com`：只允许精确主机。
 - `*.example.com`：允许其子域名，不包含裸域名 `example.com`。
 - 不要填写协议、端口或路径。
-- 空值会允许所有 HTTP/HTTPS 主机，仅适合受控开发环境。
+- 空值会导致 Connector 测试和正式执行 fail closed；至少配置一个可信的精确主机或受控通配规则。
 
 ## 6. 后端构建和启动
 

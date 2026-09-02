@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.agent.dto;
 
 import com.alibaba.fastjson.annotation.JSONField;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -154,7 +155,12 @@ public final class AiConfigDtos {
     public static class TestInput {
         @JSONField(serialize = false)
         @ToString.Exclude
-        private JsonNode input;
+        // Codex 2026-08-10 REQ-HTTP-MODEL-20260810: Jackson 3 cannot bind HTTP JSON directly to a Jackson 2 JsonNode.
+        private Object input;
+
+        public JsonNode toInternalJson(ObjectMapper objectMapper) {
+            return input == null ? null : objectMapper.valueToTree(input);
+        }
     }
 
     @Data

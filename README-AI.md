@@ -18,6 +18,7 @@ Optional settings:
 - `AI_FEISHU_API_BASE_URL`: Feishu API base URL; primarily overridden by automated tests.
 - `AI_MOCK_AGENT_ENABLED=true`: exposes the deterministic development endpoint `/api/ai/mock-agent/execute`.
 - `AI_AGENT_ALLOWED_HOSTS`: comma-separated exact hosts or `*.example.com` patterns allowed for Connector calls. An empty value rejects Connector tests and formal execution.
+- `AI_EXECUTOR_GATEWAY`: selects the formal execution Gateway. Configuration files default it to `http`; set `disabled` only when external Agent execution must be stopped.
 
 Existing databases with Flyway disabled must apply the missing multi-agent migrations from `_1` through `_7` in numeric order. `_7` adds model Provider fields and renames the existing menu without changing its route or permissions. Fresh Docker databases load the equivalent `jeecg-boot/db/multi-agent-config.sql` automatically. Assign the new menu permissions to non-admin roles after migration.
 

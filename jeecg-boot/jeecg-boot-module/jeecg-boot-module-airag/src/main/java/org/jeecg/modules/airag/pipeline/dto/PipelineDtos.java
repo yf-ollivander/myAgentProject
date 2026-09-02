@@ -1,11 +1,8 @@
 package org.jeecg.modules.airag.pipeline.dto;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.jeecg.modules.airag.pipeline.contract.PipelineDefinition;
-import org.jeecg.modules.airag.pipeline.contract.PipelineUiModel;
 import org.jeecg.modules.airag.pipeline.validation.ValidationIssue;
 
 import java.io.Serializable;
@@ -33,13 +30,17 @@ public final class PipelineDtos {
     public static class DraftSaveRequest implements Serializable {
         @NotNull @Min(0)
         private Long draftRevision;
+        // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Spring Boot 4 MVC 使用 Jackson 3，公开请求边界不能直接绑定 Jackson 2 JsonNode-----------
         @NotNull
-        private JsonNode definition;
+        private Object definition;
         @NotNull
-        private JsonNode ui;
+        private Object ui;
+        // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】Spring Boot 4 MVC 使用 Jackson 3，公开请求边界不能直接绑定 Jackson 2 JsonNode-----------
     }
 
-    public record DraftView(long draftRevision, PipelineDefinition definition, PipelineUiModel ui) implements Serializable { }
+    // update-begin---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】响应边界使用普通 Map/List，避免 Jackson 3 将内部 Jackson 2 JsonNode 序列化为属性清单-----------
+    public record DraftView(long draftRevision, Object definition, Object ui) implements Serializable { }
+    // update-end---author:Codex ---date:2026-08-10  for：【REQ-HTTP-MODEL-20260810】响应边界使用普通 Map/List，避免 Jackson 3 将内部 Jackson 2 JsonNode 序列化为属性清单-----------
 
     @Data
     public static class RevisionRequest implements Serializable {
@@ -86,8 +87,8 @@ public final class PipelineDtos {
     public record VersionSummary(String id, int version, long sourceDraftRevision, String definitionHash,
                                  String publishedBy, Date publishedAt) implements Serializable { }
 
-    public record VersionView(String id, int version, String schemaVersion, JsonNode definition,
-                              PipelineUiModel ui, String definitionHash, String publishedBy,
+    public record VersionView(String id, int version, String schemaVersion, Object definition,
+                              Object ui, String definitionHash, String publishedBy,
                               Date publishedAt) implements Serializable { }
 
     public record PipelineOption(String id, String pipelineCode, String name, int version,
